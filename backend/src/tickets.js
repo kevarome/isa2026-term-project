@@ -1,4 +1,4 @@
-import { classify, departments, urgencyLevels } from './classifier.js';
+import { classify, clefModel, departments, urgencyLevels } from './classifier.js';
 
 const statuses = ['manual_review', 'open', 'in_progress', 'resolved', 'closed'];
 const priorityRank = { low: 1, medium: 2, high: 3 };
@@ -13,6 +13,9 @@ function represent(record, staff = false) {
       email: record.email,
       version: record.version,
       classification_outcome: record.classification_outcome,
+      classification_model: record.classification_model,
+      classification_department: record.suggested_department,
+      classification_urgency: record.suggested_urgency,
       jev_department: record.suggested_department,
       jev_urgency: record.suggested_urgency
     });
@@ -144,17 +147,19 @@ export function registerTicketRoutes(app, env, authenticate, requireAdmin) {
       return res.status(429).json({ error: 'Ticket limit reached. Try again in a minute.' });
     }
     const ai = env.AI_MODE === 'offline' ? undefined : env.AI;
-    const result = await classify(ai, message);
+    const model = env.AI_MODEL || clefModel;
+    const result = await classify(ai, message, model);
     const [insert] = await db.batch([
       db.prepare(`
         INSERT INTO tickets (
           id, user_id, message, department, urgency, confidence, status,
-          classification_outcome, suggested_department, suggested_urgency
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          classification_outcome, suggested_department, suggested_urgency, classification_model
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         RETURNING *
       `).bind(
         crypto.randomUUID(), userId, message, result.department, result.urgency, result.confidence,
-        result.status, result.outcome, result.suggestion?.department ?? null, result.suggestion?.urgency ?? null
+        result.status, result.outcome, result.suggestion?.department ?? null,
+        result.suggestion?.urgency ?? null, ai ? model : null
       ),
       db.prepare("INSERT INTO api_usage (user_id, endpoint, outcome) VALUES (?, 'POST /api/tickets', ?)")
         .bind(userId, result.outcome)

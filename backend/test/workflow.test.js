@@ -187,6 +187,9 @@ test('persists all queues, staff changes, manual review and separate category st
   assert.equal(before.classification_outcome, 'low_confidence');
   assert.equal(before.jev_department, 'technical');
   assert.equal(before.jev_urgency, 'medium');
+  assert.equal(before.classification_model, '@cf/cloudflare/clef-flash');
+  assert.equal(before.classification_department, 'technical');
+  assert.equal(before.classification_urgency, 'medium');
   assert.equal((await request('/tickets/' + offline.id, { user: 'staff' })).data.ticket.classification_outcome, 'unavailable');
   assert([403, 404].includes((await request(path, { user: 'stranger' })).status));
   assert.equal((await request(path, { user: 'owner' })).status, 200);
@@ -235,6 +238,7 @@ test('preserves previously routed tickets and paginates without duplicates', asy
   const legacy = (await request('/tickets/' + ids[0], { user: 'staff' })).data.ticket;
   assert.equal(legacy.jev_department, 'technical');
   assert.equal(legacy.jev_urgency, 'high');
+  assert.equal(legacy.classification_model, 'typesafe/jev');
   assert.equal(legacy.classification_outcome, 'classified');
   const all = [];
   let after = null;

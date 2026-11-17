@@ -1,13 +1,14 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { fixtureResponse, syntheticTickets } from '../fixtures/synthetic-tickets.js';
-import { classify, model } from '../src/classifier.js';
+import { classify, clefModel, jevModel } from '../src/classifier.js';
 
-test('routes the four representative Jev responses using only the support message', async () => {
+test('routes the four representative responses using Clef Flash and only the support message', async () => {
   for (const sample of syntheticTickets.filter(item => item.style === 'plain')) {
     const ai = {
-      run(modelId, { state, questions }) {
-        assert.equal(modelId, model);
+      run(modelId, { model, state, questions }) {
+        assert.equal(modelId, clefModel);
+        assert.equal(model, 'clef-flash');
         assert.deepEqual(state, { support_message: sample.message });
         assert.deepEqual(Object.keys(questions.department.criteria).sort(), ['account', 'billing', 'general', 'technical']);
         assert.deepEqual(Object.keys(questions.urgency.criteria).sort(), ['high', 'low', 'medium']);
@@ -21,6 +22,18 @@ test('routes the four representative Jev responses using only the support messag
     assert.equal(result.status, 'open');
     assert.equal(result.outcome, 'classified');
   }
+});
+
+test('can select Jev with its original request shape', async () => {
+  const result = await classify({
+    run(model, input) {
+      assert.equal(model, jevModel);
+      assert.equal(Object.hasOwn(input, 'model'), false);
+      return fixtureResponse('billing', 'medium');
+    }
+  }, 'The same plan charge appears twice on my bill.', jevModel);
+  assert.equal(result.department, 'billing');
+  assert.equal(result.outcome, 'classified');
 });
 
 function assertReview(result, outcome) {

@@ -6,6 +6,7 @@ preview_urls = false
 
 [vars]
 CLIENT_ORIGIN = "http://localhost:8788"
+AI_MODEL = "@cf/cloudflare/clef-flash"
 
 [[d1_databases]]
 binding = "DB"

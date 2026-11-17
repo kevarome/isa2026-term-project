@@ -14,12 +14,17 @@ const labels = {
   unassigned: 'Unassigned', unprioritized: 'Unprioritized'
 };
 const reviewReasons = {
-  low_confidence: 'Jev’s confidence was below the routing threshold.',
-  unavailable: 'Jev inference was unavailable when this ticket was submitted.',
-  invalid_output: 'Jev returned an invalid classification.',
-  provider_error: 'Jev did not return a classification.',
-  timeout: 'Jev did not respond in time.',
+  low_confidence: 'Confidence was below the routing threshold.',
+  unavailable: 'AI classification was unavailable when this ticket was submitted.',
+  invalid_output: 'The model returned an invalid classification.',
+  provider_error: 'The model request failed.',
+  timeout: 'The model request timed out.',
   seeded: 'Seeded demo ticket.'
+};
+const modelNames = {
+  '@cf/cloudflare/clef-flash': 'Cloudflare Clef Flash',
+  'typesafe/jev': 'TypeSafe Jev',
+  'typesafe/jev-1.14.0': 'TypeSafe Jev 1.14'
 };
 const examples = {
   outage: 'My internet has been down since this morning, and I need the connection to work from home.',
@@ -122,7 +127,7 @@ function ticketRow(ticket, staff) {
   const meta = node('span', `${identity}${ticket.created_at} UTC`, 'muted ticket-meta');
   const id = node('span', ticket.id, 'ticket-meta ticket-id muted');
   button.append(summary, message);
-  if (staff) button.append(node('span', 'Jev classification · ' + jevResult(ticket), 'ticket-classification'));
+  if (staff) button.append(node('span', 'AI classification · ' + classificationResult(ticket), 'ticket-classification'));
   button.append(meta, id);
   button.onclick = () => void openTicket(ticket.id, staff);
   row.append(button);
@@ -232,7 +237,7 @@ async function loadStats() {
     $('stats-total').textContent = `${stats.total} ticket${stats.total === 1 ? '' : 's'}`;
     const groups = [
       ['Assigned department', stats.byDepartment],
-      ['Jev category', stats.byCategory],
+      ['AI category', stats.byCategory],
       ['Status', stats.byStatus],
       ['Priority', stats.byPriority]
     ];
@@ -249,15 +254,19 @@ async function loadStats() {
   }
 }
 
-function jevResult(ticket) {
+function classificationResult(ticket) {
   const result = [];
-  if (ticket.jev_department && ticket.jev_urgency) {
-    result.push(`${labels[ticket.jev_department]} · ${labels[ticket.jev_urgency]} urgency`);
+  const model = ticket.classification_model;
+  if (model) result.push(Object.hasOwn(modelNames, model) ? modelNames[model] : model);
+  const department = ticket.classification_department ?? ticket.jev_department;
+  const urgency = ticket.classification_urgency ?? ticket.jev_urgency;
+  if (department && urgency) {
+    result.push(`${labels[department]} · ${labels[urgency]} urgency`);
   }
   if (typeof ticket.confidence === 'number') result.push(percent.format(ticket.confidence) + ' confidence');
   const reason = reviewReasons[ticket.classification_outcome];
   if (reason) result.push(reason);
-  return result.join(' · ') || 'No Jev classification was saved for this ticket.';
+  return result.join(' · ') || 'This ticket has no saved AI classification.';
 }
 
 function renderDetail(detail, ticket) {
@@ -273,10 +282,10 @@ function renderDetail(detail, ticket) {
     labeledValue('Assigned department', labels[ticket.department] ?? labels.unassigned),
     labeledValue('Priority', labels[priority] ?? labels.unprioritized)
   );
-  $('detail-jev').hidden = !detail.staff;
+  $('detail-ai').hidden = !detail.staff;
   editForm.hidden = !detail.staff;
   if (detail.staff) {
-    $('detail-classification').textContent = jevResult(ticket);
+    $('detail-classification').textContent = classificationResult(ticket);
     editForm.elements.department.value = ticket.department ?? '';
     editForm.elements.priority.value = priority ?? '';
     editForm.elements.status.value = ticket.status;

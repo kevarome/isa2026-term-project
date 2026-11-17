@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "TicketMaestro end-to-end",
-    "description": "Run against a local or dedicated synthetic-data environment. Set customerEmail, customerPassword, staffEmail and staffPassword to existing accounts. The collection submits and updates one fictional support ticket and captures its ID and current version. Use the dashboard or GET /api/stats to inspect the result.",
+    "description": "Run against a local or dedicated synthetic-data environment. Set customerEmail, customerPassword, staffEmail and staffPassword to existing accounts. The collection submits and updates one fictional support ticket and captures its ID and current version. With live inference enabled, inspect the original model, department, and urgency in the staff ticket response. Use GET /api/stats to check aggregate results.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [

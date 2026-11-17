@@ -1,6 +1,6 @@
 import { parseArgs } from 'node:util';
 import { fixtureResponse, syntheticTickets } from '../fixtures/synthetic-tickets.js';
-import { classify, model } from '../src/classifier.js';
+import { classify, clefModel, jevModel } from '../src/classifier.js';
 
 function getLiveBinding() {
   const account = process.env.CLOUDFLARE_ACCOUNT_ID;
@@ -10,10 +10,12 @@ function getLiveBinding() {
   }
   return {
     async run(model, input) {
-      const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${account}/ai/run`, {
+      const native = model === clefModel;
+      const path = native ? '/ai/run/' + model : '/ai/run';
+      const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${account}${path}`, {
         method: 'POST',
         headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model, input }),
+        body: JSON.stringify(native ? input : { model, input }),
         signal: AbortSignal.timeout(12000)
       });
       if (!response.ok) throw new Error('Workers AI HTTP ' + response.status);
@@ -39,8 +41,14 @@ function summarize(observations) {
 
 async function main() {
   const { values } = parseArgs({
-    options: { live: { type: 'boolean' }, repeats: { type: 'string', default: '3' } }
+    options: {
+      live: { type: 'boolean' },
+      repeats: { type: 'string', default: '3' },
+      model: { type: 'string', default: clefModel }
+    }
   });
+  const { model } = values;
+  if (model !== clefModel && model !== jevModel) throw new Error('Use a supported model ID.');
   const repeats = Number(values.repeats);
   if (!Number.isInteger(repeats) || repeats < 2 || repeats > 10) {
     throw new Error('Use --repeats with an integer from 2 to 10.');
@@ -52,7 +60,7 @@ async function main() {
     const binding = live ?? { run: () => fixtureResponse(sample.department, sample.urgency) };
     const observations = [];
     for (let run = 0; run < repeats; run++) {
-      observations.push({ ...await classify(binding, sample.message), expected: sample });
+      observations.push({ ...await classify(binding, sample.message, model), expected: sample });
     }
     all.push(...observations);
     const classifications = observations.map(item => item.suggestion ?? item);
@@ -69,7 +77,7 @@ async function main() {
     });
   }
 
-  console.log(values.live ? 'Live Jev results for synthetic messages' : 'Offline simulation with scripted responses');
+  console.log(values.live ? 'Live model results for synthetic messages' : 'Offline simulation with scripted responses');
   console.log(`Model configuration: ${model}. Repeated ${repeats} times per message.`);
   console.table(perMessage);
   console.table([...new Set(syntheticTickets.map(item => item.style))].map(style => ({

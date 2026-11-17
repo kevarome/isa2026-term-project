@@ -13,7 +13,7 @@ Start the [local API and seed the demo accounts](../backend/README.md). From thi
 On macOS or Linux, omit `.cmd`. Open `http://localhost:8788`. The default client configuration calls `http://localhost:8787`.
 
 - Sign in as a customer to submit a synthetic message and view its ticket ID, priority, and status.
-- Sign in as staff to open the relevant department queue. Use the filters to find a ticket and update its status, assignment, or priority. The review queue includes submissions that need a human routing decision.
+- Sign in as staff to open the relevant department queue. Open a ticket to see its AI result and model, or why it needs manual review. Use the filters to find a ticket and update its status, assignment, or priority.
 - Sign in as an administrator to manage the support queue, review ticket statistics, and view registered users.
 
 ## Deploy

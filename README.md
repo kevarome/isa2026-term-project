@@ -1,6 +1,6 @@
 # TicketMaestro
 
-TicketMaestro is a support portal for NorthLink Internet, a fictional Canadian internet provider. A customer submits a ticket and can follow its status. TypeSafe Jev suggests a department and urgency, and the API routes a validated decision to Billing, Technical, Account, or General Support. Support staff can search queues, review uncertain results, and correct routing. Managers can see ticket statistics and registered users.
+TicketMaestro is a support portal for NorthLink Internet, a fictional Canadian internet provider. A customer submits a ticket and can follow its status. Cloudflare Clef Flash suggests a department and urgency, and the API routes a validated decision to Billing, Technical, Account, or General Support. Support staff can search queues, review uncertain results, and correct routing. Managers can see ticket statistics and registered users.
 
 ## Run locally
 
@@ -32,9 +32,9 @@ The seed also provides Billing, Account, and General Support logins. It can be r
 
 1. As a customer, submit a fictional outage, billing issue, sign-in problem, or plan inquiry. Open a ticket to see its ID, routing, and current status.
 2. As staff, open your department’s queue. Search by message, ticket ID, or customer email. Filter by department or status, sort by priority or date, and open a ticket to change its assignment, priority, or status. The review queue lets staff assign tickets that need a human decision.
-3. As an administrator, review all queues, compare Jev categories with actual assignments, view status and priority counts, and check the registered users list.
+3. As an administrator, review all queues, compare AI categories with actual assignments, view status and priority counts, and check the registered users list.
 
-Local mode saves fresh submissions for manual review. Seeded examples exercise the four queues and are identified as demo tickets. For live classification against local D1, authenticate Wrangler and use `npm run dev:ai` in place of `npm run dev`. [Jev model documentation](https://developers.cloudflare.com/ai/models/typesafe/jev/)
+Local mode saves fresh submissions for manual review. Seeded examples exercise the four queues and are identified as demo tickets. For live Clef Flash classification with local D1, authenticate Wrangler and use `npm run dev:ai` in place of `npm run dev`. [Clef Flash model documentation](https://developers.cloudflare.com/workers-ai/models/clef-flash/)
 
 ## Architecture
 
@@ -48,14 +48,14 @@ flowchart LR
     Auth --> Tickets --> Routing
   end
   DB[("Cloudflare D1")]
-  Jev["TypeSafe Jev<br/>Cloudflare Workers AI"]
+  Model["Clef Flash by default<br/>Cloudflare Workers AI"]
   Client <-->|HTTPS and JSON| Auth
   Auth <-->|Users, support profiles, sessions| DB
   Tickets <-->|Tickets and submission usage| DB
-  Routing <-->|Synthetic support message and structured result| Jev
+  Routing <-->|Synthetic support message and structured result| Model
 ```
 
-The static client and API use separate origins. The API sends only the support message to Jev. Its validated choices and confidence are stored separately from the current assignment and priority. Results below the routing threshold, invalid responses, timeouts, and provider failures go to manual review. Final status and routing changes are staff actions. The browser keeps an eight-hour session token in session storage and D1 stores its digest. The API checks roles and customer ticket ownership on each protected request.
+The static client and API use separate origins. The API sends only the support message to the configured model. The validated choices, confidence, and model ID are stored separately from the current assignment and priority. Results below the routing threshold, invalid responses, timeouts, and provider failures go to manual review. Final status and routing changes are staff actions. The browser keeps an eight-hour session token in session storage and D1 stores its digest. The API checks roles and customer ticket ownership on each protected request.
 
 | Method | Endpoint | Access |
 | --- | --- | --- |
@@ -69,7 +69,9 @@ The static client and API use separate origins. The API sends only the support m
 | GET | `/api/stats` | Staff and admins |
 | GET | `/api/admin/users`, `/api/admin/tickets` | Admins |
 
-List filters are `q`, `department`, `status`, and `sort`. A response’s `next` cursor can be used as `after` with the same filters. PATCH accepts `department`, `priority`, and `status`. Include the ticket’s `version` to detect intervening changes. Statistics distinguish original Jev categories from current department, priority, and status counts.
+List filters are `q`, `department`, `status`, and `sort`. A response’s `next` cursor can be used as `after` with the same filters. PATCH accepts `department`, `priority`, and `status`. Include the ticket’s `version` to detect intervening changes. Statistics distinguish original AI categories from current department, priority, and status counts.
+
+Staff ticket responses include `classification_model`, `classification_department`, and `classification_urgency`. Existing clients can still read `jev_department` and `jev_urgency` as aliases.
 
 ## Test and evaluate
 
@@ -77,11 +79,11 @@ Run these from `backend`.
 
 ```powershell
 npm.cmd test
-npm.cmd run evaluate:jev -- --repeats 3
+npm.cmd run evaluate:ai -- --repeats 3
 ```
 
-The tests use isolated SQLite and simulated inference responses. They cover all four routing scenarios, access rules, searches, pagination, manual review, ticket edits, and statistics. The evaluation groups repeat observations by writing style using a synthetic dataset. The offline run verifies the tool; it does not measure real model accuracy. Use `--live` with Workers AI credentials for a live evaluation. The [Postman collection](backend/test/TicketMaestro.postman_collection.json) exercises the running API.
+The tests use isolated SQLite and simulated inference responses. They cover all four routing scenarios, access rules, searches, pagination, manual review, ticket edits, and statistics. The evaluation groups repeated observations by writing style using a synthetic dataset. The offline run verifies the tool. Use `--live` with Workers AI credentials to measure Clef Flash on the same dataset. Use `--model` to name a model explicitly or run `npm run evaluate:jev` to select Jev. The [Postman collection](backend/test/TicketMaestro.postman_collection.json) exercises the running API.
 
 ## Deploy
 
-Use a Cloudflare account with Workers AI access to `typesafe/jev`, D1 access, and permission to deploy Workers. The [backend deployment guide](backend/README.md#cloudflare-deployment) and [client deployment guide](frontend/README.md#deploy) describe migrations, origin configuration, and a hosted end-to-end check. Use synthetic messages in the demo and private passwords if seeding hosted accounts.
+Use a Cloudflare account with Workers AI access, D1 access, and permission to deploy Workers. The backend guide covers model selection, migrations, and a hosted end-to-end check. Use synthetic messages in the demo and private passwords if seeding hosted accounts. [Backend deployment guide](backend/README.md#cloudflare-deployment) · [Client deployment guide](frontend/README.md#deploy)

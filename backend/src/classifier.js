@@ -1,4 +1,5 @@
-export const model = 'typesafe/jev';
+export const clefModel = '@cf/cloudflare/clef-flash';
+export const jevModel = 'typesafe/jev';
 
 export const departments = {
   billing: 'Charges, invoices, payments, refunds, or billing disputes',
@@ -20,7 +21,7 @@ function validAnswer(answer, choices) {
     answer.confidence >= 0 && answer.confidence <= 1;
 }
 
-export async function classify(ai, message) {
+export async function classify(ai, message, model = clefModel) {
   const review = { department: null, urgency: null, confidence: null, status: 'manual_review' };
   if (!ai) return { ...review, outcome: 'unavailable' };
 
@@ -29,6 +30,7 @@ export async function classify(ai, message) {
   try {
     const result = await Promise.race([
       ai.run(model, {
+        ...(model === clefModel ? { model: 'clef-flash' } : {}),
         state: { support_message: message },
         questions: {
           department: {

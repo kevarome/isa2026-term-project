@@ -95,8 +95,8 @@ dialog::backdrop { background: #122e2799; }
 .ticket-fields { min-width: 0; margin: 0; padding: 0; border: 0; }
 .routing-summary dt { color: #4a6258; font-size: .85rem; }
 .routing-summary dd { margin: .15rem 0 0; font-weight: 650; }
-.jev-result { border-left: 3px solid #84ab98; margin: 1rem 0; padding: .55rem .85rem; background: #f5f8f5; }
-.jev-result p { margin: .3rem 0 0; }
+.ai-result { border-left: 3px solid #84ab98; margin: 1rem 0; padding: .55rem .85rem; background: #f5f8f5; }
+.ai-result p { margin: .3rem 0 0; }
 #edit-ticket { padding-top: 1rem; border-top: 1px solid #dce6e0; }
 .table-wrap { overflow-x: auto; }
 table { border-collapse: collapse; text-align: left; width: 100%; }

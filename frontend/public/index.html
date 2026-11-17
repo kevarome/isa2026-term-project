@@ -42,7 +42,7 @@
             <label>Describe the issue
               <textarea name="message" rows="6" minlength="10" maxlength="2000" required aria-describedby="ticket-hint"></textarea>
             </label>
-            <p id="ticket-hint" class="muted">Jev AI reads your message to suggest a team and urgency. Staff review uncertain tickets and can correct assignments. Use fictional details only.</p>
+            <p id="ticket-hint" class="muted">AI reads your message to suggest a team and urgency. Staff review uncertain tickets and can correct assignments. Use fictional details only.</p>
             <button id="ticket-submit" type="submit">Submit ticket</button>
           </form>
           <fieldset id="ticket-examples" class="examples">
@@ -128,8 +128,8 @@
         <p id="detail-submitted" class="muted"></p>
         <p id="detail-message" class="detail-message"></p>
         <dl id="detail-routing" class="routing-summary"></dl>
-        <section id="detail-jev" class="jev-result" hidden>
-          <h3>Original Jev classification</h3>
+        <section id="detail-ai" class="ai-result" hidden>
+          <h3>Original AI classification</h3>
           <p id="detail-classification"></p>
         </section>
         <form id="edit-ticket" hidden>
