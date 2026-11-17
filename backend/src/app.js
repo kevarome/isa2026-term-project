@@ -1,6 +1,7 @@
 import express from 'express';
 import { hashPassword, verifyPassword } from './password.js';
 import { registerTicketRoutes } from './tickets.js';
+import { trackUsage, usageReport } from './usage.js';
 
 const SESSION_SECONDS = 8 * 60 * 60;
 const demoEmails = [
@@ -24,6 +25,7 @@ export function createApp(env) {
   const app = express();
   const db = env.DB;
   app.disable('x-powered-by');
+  app.use(trackUsage(db));
   app.use((req, res, next) => {
     res.set('Cache-Control', 'no-store').vary('Origin');
     const origin = req.get('Origin');
@@ -93,6 +95,7 @@ export function createApp(env) {
       "INSERT INTO users (id, email, password_hash, role) VALUES (?, ?, ?, 'user') ON CONFLICT(email) DO NOTHING"
     ).bind(user.id, email, await hashPassword(password)).run();
     if (!result.meta.changes) return res.status(409).json({ error: 'This email is already registered.' });
+    res.locals.user = user;
     res.status(201).json({ user });
   });
 
@@ -117,7 +120,8 @@ export function createApp(env) {
       db.prepare('INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, unixepoch() + ?)')
         .bind(await digest(token), record.id, SESSION_SECONDS)
     ]);
-    res.json({ token, user: identity(record) });
+    res.locals.user = identity(record);
+    res.json({ token, user: res.locals.user });
   });
 
   app.get('/api/auth/me', authenticate, (_req, res) => res.json({ user: res.locals.user }));
@@ -127,6 +131,8 @@ export function createApp(env) {
   });
 
   registerTicketRoutes(app, env, authenticate, requireAdmin);
+
+  app.get('/api/admin/usage', authenticate, requireAdmin, usageReport(db));
 
   app.get('/api/admin/users', authenticate, requireAdmin, async (req, res) => {
     const after = typeof req.query.after === 'string' ? req.query.after : '';

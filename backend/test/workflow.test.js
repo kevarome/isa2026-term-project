@@ -288,3 +288,119 @@ test('rejects a future version even if another writer reaches it before the upda
   assert.equal(ticket.priority, 'high');
   assert.equal(ticket.version, version + 1);
 });
+
+test('tracks API responses once with safe route names and restricts the report to admins', async t => {
+  const { request, database } = await withApp(t);
+  assert.equal((await request('/tickets', { method: 'OPTIONS' })).status, 204);
+  assert.equal((await request('/admin/usage')).status, 401);
+  assert.equal((await request('/admin/usage', { user: 'owner' })).status, 403);
+  assert.equal((await request('/admin/usage', { user: 'staff' })).status, 403);
+  assert.equal((await request('/auth/login', {
+    payload: { email: emails.owner, password: 'private-input' }
+  })).status, 401);
+  assert.equal((await request('/auth/login', {
+    payload: { email: emails.owner, password: fixturePassword }
+  })).status, 200);
+  const created = await request('/tickets', { user: 'owner', payload: { message: samples[0].message } });
+  assert.equal(created.status, 201);
+  assert.equal((await request('/tickets/' + created.data.ticket.id + '?q=private-query', { user: 'owner' })).status, 200);
+  assert.equal((await request('/tickets/' + randomUUID(), { user: 'owner' })).status, 404);
+  assert.equal((await request('/private-unknown-path?search=private-query')).status, 404);
+  assert.equal((await request('/auth/register', {
+    payload: { email: 'new@example.test', password: fixturePassword }
+  })).status, 201);
+
+  const report = await request('/admin/usage', { user: 'admin' });
+  assert.equal(report.status, 200);
+  const { summary, endpoints, users, daily } = report.data;
+  assert.equal(summary.requests, 10);
+  assert.equal(summary.errors, 6);
+  assert.equal(summary.activeUsers, 3);
+  assert(Number.isFinite(summary.avgDurationMs) && summary.avgDurationMs >= 0);
+  assert.equal(daily.reduce((sum, day) => sum + day.requests, 0), summary.requests);
+  assert.equal(daily.reduce((sum, day) => sum + day.errors, 0), summary.errors);
+  assert.equal(endpoints.reduce((sum, endpoint) => sum + endpoint.requests, 0), summary.requests);
+  const details = endpoints.find(item => item.method === 'GET' && item.route === '/api/tickets/:id');
+  assert.equal(details.requests, 2);
+  assert.equal(details.errors, 1);
+  const customer = users.find(item => item.email === emails.owner);
+  assert.equal(customer.requests, 5);
+  assert.equal(customer.errors, 2);
+  assert.equal(users.find(item => item.email === 'new@example.test').requests, 1);
+  const saved = database.prepare('SELECT * FROM api_requests').all();
+  assert.equal(saved.length, summary.requests + 1);
+  assert(!saved.some(row => row.method === 'OPTIONS'));
+  const serialized = JSON.stringify(saved);
+  for (const privateValue of [created.data.ticket.id, 'private-query', 'private-unknown-path', 'private-input', fixturePassword, samples[0].message]) {
+    assert(!serialized.includes(privateValue));
+  }
+  assert.equal((await request('/tickets', { user: 'owner' })).data.usage, 1);
+  assert.equal((await request('/admin/users', { user: 'admin' })).data.totals.submissions, 1);
+});
+
+test('reports UTC windows with empty days, preserves old submissions and averages only measured durations', async t => {
+  const { request, database } = await withApp(t, db => {
+    db.exec(`
+      INSERT INTO api_usage (user_id, endpoint, outcome, created_at) VALUES
+        ('owner', 'POST /api/tickets', 'classified', date('now', '-6 days')),
+        ('owner', 'POST /api/tickets', 'unavailable', date('now', '-7 days')),
+        ('owner', 'POST /api/tickets', 'classified', date('now', '-90 days'))
+    `);
+  });
+  database.exec(`
+    INSERT INTO api_requests (user_id, method, route, status_code, duration_ms, created_at) VALUES
+      ('staff', 'GET', '/api/stats', 200, 20, datetime('now', '-2 days')),
+      ('staff', 'GET', '/api/stats', 500, 40, datetime('now', '-2 days'))
+  `);
+  const today = database.prepare("SELECT date('now') AS today, date('now', '-6 days') AS start").get();
+  const seven = await request('/admin/usage', { user: 'admin' });
+  assert.equal(seven.status, 200);
+  assert.equal(seven.data.days, 7);
+  assert.equal(seven.data.from, today.start);
+  assert.equal(seven.data.to, today.today);
+  assert.equal(seven.data.summary.requests, 3);
+  assert.equal(seven.data.summary.errors, 1);
+  assert.equal(seven.data.summary.activeUsers, 2);
+  assert.equal(seven.data.summary.avgDurationMs, 30);
+  assert.equal(seven.data.daily.length, 7);
+  assert.deepEqual(seven.data.daily.map(row => row.requests), [1, 0, 0, 0, 2, 0, 0]);
+  assert.equal(seven.data.daily[0].date, today.start);
+  assert.equal(seven.data.daily.at(-1).date, today.today);
+  assert.equal(seven.data.endpoints.find(row => row.method === 'POST').avgDurationMs, null);
+  for (const days of [30, 90]) {
+    const range = await request('/admin/usage?days=' + days, { user: 'admin' });
+    assert.equal(range.status, 200);
+    assert.equal(range.data.daily.length, days);
+    assert.equal(range.data.endpoints.find(row => row.route === '/api/tickets').requests, 2);
+    assert.equal(range.data.daily.reduce((sum, row) => sum + row.requests, 0), range.data.summary.requests);
+  }
+  for (const query of ['0', '365', 'seven', '7&days=30']) {
+    assert.equal((await request('/admin/usage?days=' + query, { user: 'admin' })).status, 400);
+  }
+});
+
+test('a reporting write failure still delivers the successfully submitted ticket', async t => {
+  const { request, database } = await withApp(t);
+  const log = t.mock.method(console, 'error', () => {});
+  database.exec(`
+    CREATE TRIGGER interrupt_usage BEFORE INSERT ON api_requests
+    BEGIN SELECT RAISE(FAIL, 'unavailable for this test'); END;
+  `);
+  const result = await request('/tickets', { user: 'owner', payload: { message: samples[0].message } });
+  assert.equal(result.status, 201);
+  assert.equal(database.prepare('SELECT id FROM tickets').get().id, result.data.ticket.id);
+  assert.equal(database.prepare('SELECT COUNT(*) AS count FROM api_usage').get().count, 1);
+  assert.equal(database.prepare('SELECT COUNT(*) AS count FROM api_requests').get().count, 0);
+  assert.equal(log.mock.callCount(), 1);
+});
+
+test('the first report on a fresh database has an empty, zero-filled range', async t => {
+  const { request } = await withApp(t);
+  const response = await request('/admin/usage?days=30', { user: 'admin' });
+  assert.equal(response.status, 200);
+  assert.deepEqual(response.data.summary, { requests: 0, errors: 0, activeUsers: 0, avgDurationMs: null });
+  assert.deepEqual(response.data.endpoints, []);
+  assert.deepEqual(response.data.users, []);
+  assert.equal(response.data.daily.length, 30);
+  assert(response.data.daily.every(day => day.requests === 0 && day.errors === 0));
+});

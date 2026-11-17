@@ -33,6 +33,14 @@ The seed can be rerun. It preserves existing account passwords, roles, tickets, 
 
 Use these defaults in an isolated synthetic demo. For a hosted account seed, provide distinct private values through the shell environment using `TICKETMAESTRO_DEMO_CUSTOMER_PASSWORD`, `TICKETMAESTRO_DEMO_ADMIN_PASSWORD`, and `TICKETMAESTRO_DEMO_STAFF_PASSWORD` before generating SQL. The staff override applies to the four demo staff accounts. The generator writes only password hashes. Keep the SQL file out of version control.
 
+## Administrator API usage
+
+An administrator can request `GET /api/admin/usage?days=7` with their bearer token. The report covers the last 7, 30, or 90 UTC calendar days, including today. It returns request and error totals, average processing time in milliseconds, active account count, daily activity, endpoint traffic and the ten accounts with the most requests. Errors include HTTP 4xx and 5xx responses. Processing time ends before the usage write and excludes client network time.
+
+The API records completed requests under their route templates. It groups requests rejected before route matching under `(unrouted)` and skips OPTIONS preflight traffic. A successful report read appears on the next refresh. Protected routes and successful registration and login identify the caller. Anonymous requests contribute to traffic and error totals.
+
+Migration 0005 imports historical ticket submissions from the existing submission ledger. Latency averages use only measured requests. Other endpoints have usage history from when tracking was enabled. The demo seeder leaves request history untouched.
+
 ## Cloudflare deployment
 
 1. Authenticate Wrangler to the team’s Cloudflare account with `npx wrangler login`. A CI environment can use provider credentials in its secret store. The account needs permission to manage Workers and D1 and use Workers AI, along with sufficient Worker CPU for scrypt.
