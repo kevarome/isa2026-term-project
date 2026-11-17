@@ -1,0 +1,6 @@
+node_modules/
+.wrangler/
+.tmp-pdf/
+.dev.vars*
+.env*
+*.zip

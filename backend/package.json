@@ -1,0 +1,14 @@
+{
+  "name": "ticketmaestro-api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --local --port 8787",
+    "dev:ai": "wrangler dev --port 8787",
+    "deploy": "wrangler deploy",
+    "db:local": "wrangler d1 migrations apply DB --local",
+    "db:remote": "wrangler d1 migrations apply DB --remote"
+  },
+  "dependencies": { "express": "^5.1.0" },
+  "devDependencies": { "wrangler": "^4.59.0" }
+}
