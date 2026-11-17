@@ -3,8 +3,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev --local --port 8787",
+    "dev": "wrangler dev --local --port 8787 --var AI_MODE:offline",
     "dev:ai": "wrangler dev --port 8787",
+    "test": "node --test",
+    "evaluate:jev": "node scripts/evaluate-jev.js",
     "deploy": "wrangler deploy",
     "db:local": "wrangler d1 migrations apply DB --local",
     "db:remote": "wrangler d1 migrations apply DB --remote"

@@ -1,0 +1,376 @@
+{
+  "info": {
+    "name": "TicketMaestro end-to-end",
+    "description": "Run against a local or dedicated synthetic-data environment. Set customerEmail, customerPassword, staffEmail and staffPassword to existing accounts. The collection submits and updates one fictional support ticket and captures its ID and current version. Use the dashboard or GET /api/stats to inspect the result.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8787/api"
+    },
+    {
+      "key": "customerEmail",
+      "value": ""
+    },
+    {
+      "key": "customerPassword",
+      "value": ""
+    },
+    {
+      "key": "staffEmail",
+      "value": ""
+    },
+    {
+      "key": "staffPassword",
+      "value": ""
+    },
+    {
+      "key": "customerToken",
+      "value": ""
+    },
+    {
+      "key": "staffToken",
+      "value": ""
+    },
+    {
+      "key": "ticketId",
+      "value": ""
+    },
+    {
+      "key": "ticketVersion",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Health and database",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/health",
+        "header": []
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"D1 connected\", () => pm.expect(pm.response.json().database).to.eql(\"connected\"));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Customer sign-in",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/auth/login",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{customerEmail}}\",\n  \"password\": \"{{customerPassword}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ]
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+              "const result = pm.response.json();",
+              "pm.test(\"Customer account\", () => pm.expect(result.user.role).to.eql(\"user\"));",
+              "pm.collectionVariables.set(\"customerToken\", result.token);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Submit synthetic outage",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/tickets",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"message\": \"My internet has been down since this morning, and I need the connection to work from home.\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{customerToken}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ]
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+              "const { ticket } = pm.response.json();",
+              "pm.test(\"Ticket saved\", () => pm.expect(ticket.id).to.be.a(\"string\"));",
+              "pm.collectionVariables.set(\"ticketId\", ticket.id);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Read owned ticket",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/tickets/{{ticketId}}",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{customerToken}}"
+          }
+        ]
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"Ticket has the expected ID\", () => pm.expect(pm.response.json().ticket.id).to.eql(pm.collectionVariables.get(\"ticketId\")));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Staff sign-in",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/auth/login",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{staffEmail}}\",\n  \"password\": \"{{staffPassword}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ]
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+              "const result = pm.response.json();",
+              "pm.test(\"Staff access\", () => pm.expect(result.user.role).to.be.oneOf([\"staff\", \"admin\"]));",
+              "pm.collectionVariables.set(\"staffToken\", result.token);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Search staff queue by ticket ID",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/tickets?q={{ticketId}}&sort=priority",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{staffToken}}"
+          }
+        ]
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+              "const { tickets } = pm.response.json();",
+              "pm.test(\"New ticket matches\", () => pm.expect(tickets.map(ticket => ticket.id)).to.include(pm.collectionVariables.get(\"ticketId\")));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Read current ticket version",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/tickets/{{ticketId}}",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{staffToken}}"
+          }
+        ]
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+              "const { ticket } = pm.response.json();",
+              "pm.test(\"Ticket has a version\", () => pm.expect(ticket.version).to.be.a(\"number\"));",
+              "pm.collectionVariables.set(\"ticketVersion\", ticket.version);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Reassign and start work",
+      "request": {
+        "method": "PATCH",
+        "url": "{{baseUrl}}/tickets/{{ticketId}}",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"department\": \"technical\",\n  \"priority\": \"high\",\n  \"status\": \"in_progress\",\n  \"version\": {{ticketVersion}}\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{staffToken}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ]
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+              "const { ticket } = pm.response.json();",
+              "pm.test(\"Changes persisted\", () => {",
+              "  pm.expect(ticket.department).to.eql(\"technical\");",
+              "  pm.expect(ticket.priority).to.eql(\"high\");",
+              "  pm.expect(ticket.status).to.eql(\"in_progress\");",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Staff statistics",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/stats",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{staffToken}}"
+          }
+        ]
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+              "const stats = pm.response.json();",
+              "pm.test(\"Statistics show work in progress\", () => pm.expect(stats.byStatus.in_progress).to.be.above(0));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Customer sign-out",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/auth/logout",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{customerToken}}"
+          }
+        ]
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+              "pm.collectionVariables.unset(\"customerToken\");"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Staff sign-out",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/auth/logout",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{staffToken}}"
+          }
+        ]
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+              "pm.collectionVariables.unset(\"staffToken\");"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

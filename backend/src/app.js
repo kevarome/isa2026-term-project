@@ -1,9 +1,19 @@
 import express from 'express';
-import { classify } from './classifier.js';
 import { hashPassword, verifyPassword } from './password.js';
+import { registerTicketRoutes } from './tickets.js';
 
 const SESSION_SECONDS = 8 * 60 * 60;
-const demoEmails = ['john@john.com', 'admin@admin.com'];
+const demoEmails = [
+  'john@john.com', 'admin@admin.com',
+  'billing@example.test', 'technical@example.test', 'account@example.test', 'general@example.test'
+];
+const roleColumn = "CASE WHEN staff.department IS NOT NULL AND u.role = 'user' THEN 'staff' ELSE u.role END AS role";
+
+function identity({ id, email, role, department }) {
+  const user = { id, email, role };
+  if (role === 'staff') user.department = department;
+  return user;
+}
 
 async function digest(value) {
   const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
@@ -23,7 +33,7 @@ export function createApp(env) {
     if (origin) {
       res.set({
         'Access-Control-Allow-Origin': origin,
-        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        'Access-Control-Allow-Methods': 'GET, POST, PATCH, OPTIONS',
         'Access-Control-Allow-Headers': 'Authorization, Content-Type'
       });
     }
@@ -43,12 +53,23 @@ export function createApp(env) {
   async function authenticate(req, res, next) {
     const token = req.get('Authorization')?.match(/^Bearer ([a-f0-9]{64})$/i)?.[1];
     const tokenHash = token && await digest(token);
-    const user = tokenHash && await db.prepare(
-      'SELECT u.id, u.email, u.role FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.expires_at > unixepoch()'
-    ).bind(tokenHash).first();
+    const user = tokenHash && await db.prepare(`
+      SELECT u.id, u.email, ${roleColumn}, staff.department
+      FROM sessions s
+      JOIN users u ON u.id = s.user_id
+      LEFT JOIN staff_profiles staff ON staff.user_id = u.id
+      WHERE s.token_hash = ? AND s.expires_at > unixepoch()
+    `).bind(tokenHash).first();
     if (!user) return res.status(401).json({ error: 'Sign in to continue.' });
-    res.locals.user = user;
+    res.locals.user = identity(user);
     res.locals.tokenHash = tokenHash;
+    next();
+  }
+
+  function requireAdmin(_req, res, next) {
+    if (res.locals.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Administrator access required.' });
+    }
     next();
   }
 
@@ -81,8 +102,12 @@ export function createApp(env) {
     if (!email || email.length > 254 || typeof password !== 'string' || !password || password.length > 128) {
       return res.status(400).json({ error: 'Enter your email and password.' });
     }
-    const record = await db.prepare('SELECT id, email, role, password_hash FROM users WHERE email = ?')
-      .bind(email).first();
+    const record = await db.prepare(`
+      SELECT u.id, u.email, u.password_hash, ${roleColumn}, staff.department
+      FROM users u
+      LEFT JOIN staff_profiles staff ON staff.user_id = u.id
+      WHERE u.email = ?
+    `).bind(email).first();
     const valid = await verifyPassword(password, record?.password_hash ?? 'unused-salt:' + '0'.repeat(128));
     if (!record || !valid) return res.status(401).json({ error: 'Email or password is incorrect.' });
 
@@ -92,7 +117,7 @@ export function createApp(env) {
       db.prepare('INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, unixepoch() + ?)')
         .bind(await digest(token), record.id, SESSION_SECONDS)
     ]);
-    res.json({ token, user: { id: record.id, email: record.email, role: record.role } });
+    res.json({ token, user: identity(record) });
   });
 
   app.get('/api/auth/me', authenticate, (_req, res) => res.json({ user: res.locals.user }));
@@ -101,40 +126,19 @@ export function createApp(env) {
     res.json({ signedOut: true });
   });
 
-  app.get('/api/tickets', authenticate, async (_req, res) => {
-    const id = res.locals.user.id;
-    const [tickets, usage] = await db.batch([
-      db.prepare('SELECT id, message, department, urgency, confidence, status, created_at FROM tickets WHERE user_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 30').bind(id),
-      db.prepare('SELECT COUNT(*) AS count FROM api_usage WHERE user_id = ?').bind(id)
-    ]);
-    res.json({ tickets: tickets.results, usage: usage.results[0].count });
-  });
+  registerTicketRoutes(app, env, authenticate, requireAdmin);
 
-  app.post('/api/tickets', authenticate, async (req, res) => {
-    const userId = res.locals.user.id;
-    const message = typeof req.body?.message === 'string' ? req.body.message.trim() : '';
-    if (message.length < 10 || message.length > 2000) {
-      return res.status(400).json({ error: 'Describe the issue in 10 to 2,000 characters.' });
-    }
-    if (!(await env.TICKET_LIMIT.limit({ key: userId })).success) {
-      return res.status(429).json({ error: 'Ticket limit reached. Try again in a minute.' });
-    }
-    const { outcome, ...routing } = await classify(env.AI, message);
-    const id = crypto.randomUUID();
-    const [insert] = await db.batch([
-      db.prepare('INSERT INTO tickets (id, user_id, message, department, urgency, confidence, status) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id, message, department, urgency, confidence, status, created_at')
-        .bind(id, userId, message, routing.department, routing.urgency, routing.confidence, routing.status),
-      db.prepare("INSERT INTO api_usage (user_id, endpoint, outcome) VALUES (?, 'POST /api/tickets', ?)")
-        .bind(userId, outcome)
-    ]);
-    res.status(201).json({ ticket: insert.results[0] });
-  });
-
-  app.get('/api/admin/users', authenticate, async (req, res) => {
-    if (res.locals.user.role !== 'admin') return res.status(403).json({ error: 'Administrator access required.' });
+  app.get('/api/admin/users', authenticate, requireAdmin, async (req, res) => {
     const after = typeof req.query.after === 'string' ? req.query.after : '';
     const [users, totals] = await db.batch([
-      db.prepare('SELECT id, email, role, created_at FROM users WHERE email > ? ORDER BY email LIMIT 51').bind(after),
+      db.prepare(`
+        SELECT u.id, u.email, ${roleColumn}, staff.department, u.created_at
+        FROM users u
+        LEFT JOIN staff_profiles staff ON staff.user_id = u.id
+        WHERE u.email > ?
+        ORDER BY u.email
+        LIMIT 51
+      `).bind(after),
       db.prepare('SELECT (SELECT COUNT(*) FROM users) AS users, (SELECT COUNT(*) FROM api_usage) AS submissions')
     ]);
     const page = users.results.slice(0, 50);
