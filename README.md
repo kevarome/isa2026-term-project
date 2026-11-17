@@ -1,64 +1,61 @@
 # TicketMaestro
 
-TicketMaestro routes fictional NorthLink Internet support requests. Jev classifies the request by department and urgency, and the API saves it in D1. Tickets with uncertain results or unavailable inference enter manual review. The administrator dashboard lists registered users and aggregate ticket submission counts.
+TicketMaestro is a support portal for NorthLink Internet, a fictional Canadian internet provider. A customer submits a ticket and can follow its status. TypeSafe Jev suggests a department and urgency, and the API routes a validated decision to Billing, Technical, Account, or General Support. Support staff can search queues, review uncertain results, and correct routing. Managers can see ticket statistics and registered users.
 
-## Local setup
+## Run locally
 
-Use Node.js 22.14 or newer. Run these commands in `backend` using PowerShell.
+Use Node.js 22.14 or newer. From `backend`, install dependencies, migrate the local D1 database, and seed the synthetic demonstration accounts and tickets.
 
 ```powershell
 npm.cmd ci
 npm.cmd run db:local
-node scripts/demo-sql.js | Set-Content -Encoding ascii .wrangler/demo.sql
+node scripts/demo-sql.js --tickets | Set-Content -Encoding ascii .wrangler/demo.sql
 npx.cmd wrangler d1 execute DB --local --file .wrangler/demo.sql
 npm.cmd run dev
 ```
 
-In a second terminal at the repository root, run the static Worker.
+From the repo root in another terminal, start the static client.
 
 ```powershell
 ./backend/node_modules/.bin/wrangler.cmd dev --config frontend/wrangler.toml --port 8788
 ```
 
-Visit `http://localhost:8788` for registration, sign-in, and the role-specific workspaces. Local mode runs with D1 and exercises manual review. For live routing against Jev with local D1, authenticate Wrangler to a Cloudflare account with Workers AI access, stop the local API process, and run `npm.cmd run dev:ai`. Live inference may incur provider charges.
+Open [TicketMaestro](http://localhost:8788). The API listens on `http://localhost:8787`.
 
-| Role | Email | Assignment demo password |
+| Workspace | Demo account | Local password |
 | --- | --- | --- |
-| User | john@john.com | 123 |
-| Administrator | admin@admin.com | 111 |
+| Customer | `john@john.com` | `123` |
+| Technical support | `technical@example.test` | `NorthLink-demo-only-Workshop42!` |
+| Administrator | `admin@admin.com` | `111` |
 
-Seed these accounts once in a dedicated grading database with synthetic data. The seed generator hashes the rubric-provided passwords before generating the SQL. Public registration always creates a user account and reserves the two demo email addresses.
+The seed also provides Billing, Account, and General Support logins. It can be rerun and preserves existing tickets and accounts. Use these credentials only in an isolated synthetic demo. [All demo accounts and macOS/Linux setup](backend/README.md#local-api-and-demo-data)
 
-## Separate-origin deployment
+1. As a customer, submit a fictional outage, billing issue, sign-in problem, or plan inquiry. Open a ticket to see its ID, routing, and current status.
+2. As staff, open your department’s queue. Search by message, ticket ID, or customer email. Filter by department or status, sort by priority or date, and open a ticket to change its assignment, priority, or status. The review queue lets staff assign tickets that need a human decision.
+3. As an administrator, review all queues, compare Jev categories with actual assignments, view status and priority counts, and check the registered users list.
 
-1. Confirm the instructor or TA approves the Option B provider and model, TypeSafe Jev (`typesafe/jev`) via Cloudflare Workers AI. Use a Cloudflare account with access to the model and sufficient Worker CPU for the scrypt password hashing work. See [Jev integration](https://developers.cloudflare.com/ai/models/typesafe/jev/).
-2. From `backend`, run `npm.cmd ci`, authenticate Wrangler, then run `npx.cmd wrangler d1 create ticketmaestro`. Replace the placeholder `database_id` in `backend/wrangler.toml` with the returned ID.
-3. Set `CLIENT_ORIGIN` to the planned HTTPS origin of the static Worker, without a trailing slash. Run `npm.cmd run db:remote` and, after generating the SQL as shown above, run `npx.cmd wrangler d1 execute DB --remote --file .wrangler/demo.sql`. For a fresh remote setup, create `.wrangler` before writing the SQL if it does not exist.
-4. Run `npm.cmd run deploy` from `backend`. Put the API Worker's HTTPS origin in `frontend/public/config.js` and in the `connect-src` directive in `frontend/public/_headers`.
-5. From the repository root, deploy the static Worker with `./backend/node_modules/.bin/wrangler.cmd deploy --config frontend/wrangler.toml`. Verify the actual client origin matches `CLIENT_ORIGIN` and the client and API origins differ. Both demo URLs use the client homepage, which opens the appropriate workspace after sign-in.
-6. Check `/api/health` on the API origin. On the client, register and sign in as a new fictional user, submit the outage example, and confirm a department and urgency appear. Reload to verify persistence. Sign in as the demo administrator and confirm the new account appears. A ticket marked for manual review alone leaves live inference unverified.
+Local mode saves fresh submissions for manual review. Seeded examples exercise the four queues and are identified as demo tickets. For live classification against local D1, authenticate Wrangler and use `npm run dev:ai` in place of `npm run dev`. [Jev model documentation](https://developers.cloudflare.com/ai/models/typesafe/jev/)
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-  Browser["Browser · static client Worker<br/>independent HTTPS origin"]
-  subgraph Worker["Express API Worker · independent HTTPS origin"]
-    REST["REST endpoints"]
-    Auth["Authentication and role checks"]
-    Routing["Classification and routing"]
-    REST --> Auth
-    REST --> Routing
+  Client["Customer, staff, administrator<br/>Cloudflare Static Assets Worker"]
+  subgraph API["Express API Worker"]
+    Auth["Session and role checks"]
+    Tickets["Tickets, queues, and statistics"]
+    Routing["Validate and route"]
+    Auth --> Tickets --> Routing
   end
-  DB[("Cloudflare D1 · separate managed database")]
-  AI["Cloudflare Workers AI · hosted TypeSafe Jev"]
-  Browser <-->|HTTPS and JSON| REST
-  Auth <-->|Users and sessions| DB
-  REST <-->|Tickets and API usage| DB
-  Routing <-->|Inference binding| AI
+  DB[("Cloudflare D1")]
+  Jev["TypeSafe Jev<br/>Cloudflare Workers AI"]
+  Client <-->|HTTPS and JSON| Auth
+  Auth <-->|Users, support profiles, sessions| DB
+  Tickets <-->|Tickets and submission usage| DB
+  Routing <-->|Synthetic support message and structured result| Jev
 ```
 
-The API issues eight-hour opaque bearer sessions and stores only token digests. The browser keeps the token in session storage for Milestone 1. Database roles are read on each protected request. Ticket history is scoped to the signed-in user, and the administrator endpoint verifies the administrator role on the server. Ticket and usage writes are atomic. API usage counts accepted submissions, including those saved for manual review.
+The static client and API use separate origins. The API sends only the support message to Jev. Its validated choices and confidence are stored separately from the current assignment and priority. Results below the routing threshold, invalid responses, timeouts, and provider failures go to manual review. Final status and routing changes are staff actions. The browser keeps an eight-hour session token in session storage and D1 stores its digest. The API checks roles and customer ticket ownership on each protected request.
 
 | Method | Endpoint | Access |
 | --- | --- | --- |
@@ -66,5 +63,25 @@ The API issues eight-hour opaque bearer sessions and stores only token digests. 
 | POST | `/api/auth/register`, `/api/auth/login` | Public |
 | GET | `/api/auth/me` | Signed in |
 | POST | `/api/auth/logout` | Signed in |
-| GET, POST | `/api/tickets` | Signed in |
-| GET | `/api/admin/users` | Administrator |
+| POST | `/api/tickets` | Signed in |
+| GET | `/api/tickets`, `/api/tickets/:id` | Own tickets for customers, all queues for staff and admins |
+| PATCH | `/api/tickets/:id` | Staff and admins |
+| GET | `/api/stats` | Staff and admins |
+| GET | `/api/admin/users`, `/api/admin/tickets` | Admins |
+
+List filters are `q`, `department`, `status`, and `sort`. A response’s `next` cursor can be used as `after` with the same filters. PATCH accepts `department`, `priority`, and `status`. Include the ticket’s `version` to detect intervening changes. Statistics distinguish original Jev categories from current department, priority, and status counts.
+
+## Test and evaluate
+
+Run these from `backend`.
+
+```powershell
+npm.cmd test
+npm.cmd run evaluate:jev -- --repeats 3
+```
+
+The tests use isolated SQLite and simulated inference responses. They cover all four routing scenarios, access rules, searches, pagination, manual review, ticket edits, and statistics. The evaluation groups repeat observations by writing style using a synthetic dataset. The offline run verifies the tool; it does not measure real model accuracy. Use `--live` with Workers AI credentials for a live evaluation. The [Postman collection](backend/test/TicketMaestro.postman_collection.json) exercises the running API.
+
+## Deploy
+
+Use a Cloudflare account with Workers AI access to `typesafe/jev`, D1 access, and permission to deploy Workers. The [backend deployment guide](backend/README.md#cloudflare-deployment) and [client deployment guide](frontend/README.md#deploy) describe migrations, origin configuration, and a hosted end-to-end check. Use synthetic messages in the demo and private passwords if seeding hosted accounts.
