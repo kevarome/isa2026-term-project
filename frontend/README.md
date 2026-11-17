@@ -14,7 +14,7 @@ On macOS or Linux, omit `.cmd`. Open `http://localhost:8788`. The default client
 
 - Sign in as a customer to submit a synthetic message and view its ticket ID, priority, and status.
 - Sign in as staff to open the relevant department queue. Open a ticket to see its AI result and model, or why it needs manual review. Use the filters to find a ticket and update its status, assignment, or priority.
-- Sign in as an administrator to manage the support queue, review ticket statistics, and view registered users.
+- Sign in as an administrator to open the API usage report. Select a 7-, 30-, or 90-day period to inspect daily requests, errors, processing time, and the most active endpoints and accounts. Use the arrow keys on the chart to explore individual days. The sidebar also opens the ticket queue, ticket statistics, and registered users. [Local admin dashboard](http://localhost:8788/#api-usage)
 
 ## Deploy
 

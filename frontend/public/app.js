@@ -1,4 +1,5 @@
 import { API_ORIGIN } from './config.js';
+import { setupUsageReport } from './usage.js';
 
 const $ = id => document.getElementById(id);
 const accessForm = $('access-form');
@@ -43,6 +44,7 @@ let queueFilters = new URLSearchParams();
 let queueRequest = 0;
 let activeDetail = null;
 let saving = false;
+const usageReport = setupUsageReport(api);
 
 function node(tag, text, className) {
   const element = document.createElement(tag);
@@ -61,8 +63,16 @@ function detailNotice(message = '', error = false) {
   $('detail-notice').classList.toggle('error', error);
 }
 
-function show(view) {
+function show(view, admin = false) {
   for (const id of ['access', 'customer', 'staff']) $(id).hidden = id !== view;
+  document.body.classList.toggle('admin-mode', admin);
+  $('admin-sidebar').hidden = !admin;
+  if (!admin) {
+    usageReport.clear();
+    $('admin-email').textContent = '';
+    $('users').replaceChildren();
+    $('totals').textContent = '';
+  }
   $('logout').hidden = view === 'access';
   if (view === 'access' && detailDialog.open) detailDialog.close();
 }
@@ -309,12 +319,38 @@ async function openTicket(id, staff) {
   }
 }
 
+async function openAdminPage(focusHeading = false) {
+  if (!document.body.classList.contains('admin-mode')) return;
+  const pages = { 'api-usage': 'API usage', 'ticket-queue': 'Ticket queue', 'registered-users': 'Registered users' };
+  const requested = location.hash.slice(1);
+  const page = Object.hasOwn(pages, requested) ? requested : 'api-usage';
+  $('staff-title').textContent = pages[page];
+  $('usage-panel').hidden = page !== 'api-usage';
+  $('staff-queue').hidden = page !== 'ticket-queue';
+  $('admin-users').hidden = page !== 'registered-users';
+  for (const link of $('admin-sidebar').querySelectorAll('a')) {
+    if (link.hash === '#' + page) link.setAttribute('aria-current', 'page');
+    else link.removeAttribute('aria-current');
+  }
+  if (focusHeading) $('staff-title').focus();
+  if (page === 'api-usage') return usageReport.load();
+  usageReport.clear();
+  if (page === 'registered-users') return loadUsers();
+  await Promise.all([loadQueue(selectedQueueFilters()), loadStats()]);
+}
+
 async function openWorkspace(user) {
   if (user.role === 'admin' || user.role === 'staff') {
     const admin = user.role === 'admin';
-    $('staff-title').textContent = admin ? 'Administrator dashboard' : 'Support dashboard';
+    $('staff-title').textContent = 'Support dashboard';
     $('staff-email').textContent = [user.email, labels[user.department]].filter(Boolean).join(' · ');
-    $('admin-users').hidden = !admin;
+    $('staff-email').hidden = admin;
+    $('admin-email').textContent = admin ? user.email : '';
+    $('admin-users').hidden = true;
+    $('usage-panel').hidden = true;
+    $('staff-queue').hidden = false;
+    $('queue-title').textContent = admin ? 'Tickets' : 'Ticket queue';
+    $('usage-period').value = '7';
     $('users').replaceChildren();
     $('totals').textContent = 'Loading users…';
     $('more-users').hidden = true;
@@ -324,10 +360,9 @@ async function openWorkspace(user) {
     $('stats-breakdown').replaceChildren();
     queueForm.reset();
     queueForm.elements.department.value = user.department ?? '';
-    show('staff');
-    const tasks = [loadQueue(selectedQueueFilters()), loadStats()];
-    if (admin) tasks.push(loadUsers());
-    await Promise.all(tasks);
+    show('staff', admin);
+    if (admin) await openAdminPage();
+    else await Promise.all([loadQueue(selectedQueueFilters()), loadStats()]);
   } else {
     $('customer-email').textContent = user.email;
     $('tickets').replaceChildren();
@@ -487,6 +522,9 @@ $('refresh-customer-tickets').onclick = () => void run(() => loadCustomerTickets
 $('more-customer-tickets').onclick = () => void run(() => loadCustomerTickets(nextCustomerTicket));
 $('more-users').onclick = () => void run(() => loadUsers(nextUser), $('more-users'));
 $('more-tickets').onclick = () => void run(() => loadQueue(queueFilters, nextQueueTicket));
+window.addEventListener('hashchange', () => {
+  if (document.body.classList.contains('admin-mode')) void run(() => openAdminPage(true));
+});
 $('logout').onclick = () => void run(async () => {
   await api('/auth/logout', {});
   saveToken(null);

@@ -1,6 +1,6 @@
 # TicketMaestro
 
-TicketMaestro is a support portal for NorthLink Internet, a fictional Canadian internet provider. A customer submits a ticket and can follow its status. Cloudflare Clef Flash suggests a department and urgency, and the API routes a validated decision to Billing, Technical, Account, or General Support. Support staff can search queues, review uncertain results, and correct routing. Managers can see ticket statistics and registered users.
+TicketMaestro is a support portal for NorthLink Internet, a fictional Canadian internet provider. A customer submits a ticket and can follow its status. Cloudflare Clef Flash suggests a department and urgency, and the API routes a validated decision to Billing, Technical, Account, or General Support. Support staff can search queues, review uncertain results, and correct routing. Administrators can view API traffic, ticket statistics, and registered users.
 
 ## Run locally
 
@@ -32,7 +32,7 @@ The seed also provides Billing, Account, and General Support logins. It can be r
 
 1. As a customer, submit a fictional outage, billing issue, sign-in problem, or plan inquiry. Open a ticket to see its ID, routing, and current status.
 2. As staff, open your department’s queue. Search by message, ticket ID, or customer email. Filter by department or status, sort by priority or date, and open a ticket to change its assignment, priority, or status. The review queue lets staff assign tickets that need a human decision.
-3. As an administrator, review all queues, compare AI categories with actual assignments, view status and priority counts, and check the registered users list.
+3. As an administrator, open **API usage** to see request volume, errors, processing time, and the most active endpoints and accounts. Change the reporting period or refresh after using the app. **Ticket queue** contains ticket statistics and staff workflows. **Registered users** lists the accounts.
 
 Local mode saves fresh submissions for manual review. Seeded examples exercise the four queues and are identified as demo tickets. For live Clef Flash classification with local D1, authenticate Wrangler and use `npm run dev:ai` in place of `npm run dev`. [Clef Flash model documentation](https://developers.cloudflare.com/workers-ai/models/clef-flash/)
 
@@ -45,13 +45,16 @@ flowchart LR
     Auth["Session and role checks"]
     Tickets["Tickets, queues, and statistics"]
     Routing["Validate and route"]
+    Usage["Request tracking and admin reporting"]
     Auth --> Tickets --> Routing
+    Auth -->|Admin report| Usage
   end
   DB[("Cloudflare D1")]
   Model["Clef Flash by default<br/>Cloudflare Workers AI"]
   Client <-->|HTTPS and JSON| Auth
   Auth <-->|Users, support profiles, sessions| DB
   Tickets <-->|Tickets and submission usage| DB
+  Usage <-->|Request events and aggregates| DB
   Routing <-->|Synthetic support message and structured result| Model
 ```
 
@@ -68,6 +71,7 @@ The static client and API use separate origins. The API sends only the support m
 | PATCH | `/api/tickets/:id` | Staff and admins |
 | GET | `/api/stats` | Staff and admins |
 | GET | `/api/admin/users`, `/api/admin/tickets` | Admins |
+| GET | `/api/admin/usage?days=7` | Admins |
 
 List filters are `q`, `department`, `status`, and `sort`. A response’s `next` cursor can be used as `after` with the same filters. PATCH accepts `department`, `priority`, and `status`. Include the ticket’s `version` to detect intervening changes. Statistics distinguish original AI categories from current department, priority, and status counts.
 

@@ -6,11 +6,12 @@
   <meta name="referrer" content="no-referrer">
   <title>TicketMaestro | NorthLink Internet</title>
   <link rel="stylesheet" href="./style.css">
+  <link rel="stylesheet" href="./admin.css">
   <script type="module" src="./app.js"></script>
 </head>
 <body>
   <header>
-    <a href="./" class="brand">TicketMaestro</a>
+    <a href="./" class="brand"><span class="brand-mark" aria-hidden="true"></span>TicketMaestro</a>
     <span>NorthLink Internet</span>
     <button id="logout" hidden>Sign out</button>
   </header>
@@ -65,8 +66,74 @@
       </div>
     </section>
     <section id="staff" hidden>
-      <h1 id="staff-title">Support dashboard</h1>
+      <aside id="admin-sidebar" hidden aria-label="Administration">
+        <div class="workspace-identity"><span class="org-avatar" aria-hidden="true">N</span><div><strong>NorthLink</strong><small>Admin workspace</small></div></div>
+        <nav aria-label="Admin navigation">
+          <p class="nav-group">Reporting</p>
+          <a href="#api-usage"><i class="nav-icon bars" aria-hidden="true"></i>API usage</a>
+          <p class="nav-group">Support</p>
+          <a href="#ticket-queue"><i class="nav-icon inbox" aria-hidden="true"></i>Ticket queue</a>
+          <a href="#registered-users"><i class="nav-icon person" aria-hidden="true"></i>Registered users</a>
+        </nav>
+        <div class="admin-profile"><i class="nav-icon person" aria-hidden="true"></i><div><strong>Administrator</strong><small id="admin-email"></small></div></div>
+      </aside>
+      <div class="staff-body">
+      <h1 id="staff-title" tabindex="-1">Support dashboard</h1>
       <p id="staff-email" class="workspace-account"></p>
+      <section id="usage-panel" hidden aria-labelledby="staff-title">
+        <div class="report-controls">
+          <div><label for="usage-period" class="sr-only">Reporting period</label>
+            <select id="usage-period"><option value="7">Last 7 days</option><option value="30">Last 30 days</option><option value="90">Last 90 days</option></select>
+            <button type="button" id="usage-refresh"><span aria-hidden="true">↻</span> Refresh</button>
+          </div>
+          <p id="usage-dates"></p>
+        </div>
+        <p id="report-state" class="report-state" role="status"></p>
+        <div id="usage-data" hidden>
+          <dl class="metric-grid">
+            <div><dt>Total requests</dt><dd id="metric-requests"></dd><dd class="metric-note">Includes anonymous calls</dd></div>
+            <div><dt>Error rate</dt><dd id="metric-error-rate"></dd><dd id="metric-errors" class="metric-note"></dd></div>
+            <div><dt>Avg. processing time</dt><dd id="metric-duration"></dd><dd class="metric-note">Per timed request</dd></div>
+            <div><dt>Active accounts</dt><dd id="metric-users"></dd><dd class="metric-note">Distinct identified callers</dd></div>
+          </dl>
+          <section class="report-card traffic" aria-labelledby="traffic-title">
+            <div class="report-heading"><h2 id="traffic-title">Request volume</h2>
+              <div class="chart-legend"><span>Successful</span><span>Errors</span></div>
+            </div>
+            <p id="chart-empty" class="report-empty" hidden>No API requests were recorded in this period.</p>
+            <div id="traffic-graph">
+              <div class="plot">
+                <div id="chart-scale" aria-hidden="true"></div>
+                <div id="chart-bars" role="group" aria-label="Daily requests. Use the left and right arrow keys to explore dates."></div>
+              </div>
+              <div id="chart-dates" aria-hidden="true"></div>
+              <p id="chart-detail" aria-live="polite"></p>
+            </div>
+          </section>
+          <div class="report-tables">
+            <section class="report-card" aria-labelledby="endpoints-title">
+              <div class="report-heading"><h2 id="endpoints-title">Endpoints</h2></div>
+              <div class="table-wrap"><table>
+                <thead><tr><th scope="col">Endpoint</th><th scope="col">Requests</th><th scope="col">Errors</th></tr></thead>
+                <tbody id="usage-endpoints"></tbody>
+              </table></div>
+              <button type="button" id="expand-endpoints" class="table-action" hidden>Show all endpoints</button>
+            </section>
+            <section class="report-card" aria-labelledby="callers-title">
+              <div class="report-heading"><h2 id="callers-title">Top callers</h2></div>
+              <div class="table-wrap"><table>
+                <thead><tr><th scope="col">Account</th><th scope="col">Requests</th><th scope="col">Errors</th></tr></thead>
+                <tbody id="usage-callers"></tbody>
+              </table></div>
+            </section>
+          </div>
+          <details class="report-help"><summary>How usage is counted</summary>
+            <p>Each completed API call counts once, including refreshes of this report. Browser preflight checks are excluded. Errors are HTTP 4xx and 5xx responses. Top callers shows up to ten identified accounts.</p>
+            <p>Before full tracking began, only successful ticket submissions were recorded. Those requests count toward volume. Average processing time uses requests with a recorded duration.</p>
+          </details>
+        </div>
+      </section>
+      <div id="staff-queue">
       <details class="card staff-section stats">
         <summary><span>Ticket statistics</span><span id="stats-total" class="muted">Loading…</span></summary>
         <div id="stats-breakdown" class="stats-grid"></div>
@@ -107,8 +174,8 @@
         <ul id="queue-tickets"></ul>
         <button id="more-tickets" type="button" class="link" hidden>Load more tickets</button>
       </section>
+      </div>
       <section id="admin-users" class="card staff-section" hidden>
-        <h2>Registered users</h2>
         <p id="totals" class="muted" role="status"></p>
         <div class="table-wrap"><table>
           <thead><tr><th scope="col">Email</th><th scope="col">Role</th><th scope="col">Registered (UTC)</th></tr></thead>
@@ -116,6 +183,7 @@
         </table></div>
         <button id="more-users" type="button" class="link" hidden>Load more users</button>
       </section>
+      </div>
     </section>
     <dialog id="ticket-detail" aria-labelledby="detail-title">
       <div class="dialog-header">
