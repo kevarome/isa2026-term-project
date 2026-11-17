@@ -1,0 +1,6 @@
+name = "ticketmaestro-client"
+compatibility_date = "2026-02-01"
+preview_urls = false
+
+[assets]
+directory = "./public"

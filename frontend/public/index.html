@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>TicketMaestro | NorthLink Internet</title>
+  <link rel="stylesheet" href="./style.css">
+  <script type="module" src="./app.js"></script>
+</head>
+<body>
+  <header>
+    <a href="./" class="brand">TicketMaestro</a>
+    <span>NorthLink Internet</span>
+    <button id="logout" hidden>Sign out</button>
+  </header>
+  <main>
+    <p id="notice" role="status"></p>
+    <section id="access" class="access" hidden>
+      <div class="intro">
+        <h1>NorthLink support</h1>
+        <p>Submit a support request and follow it as it’s routed to the right team.</p>
+      </div>
+      <div class="card">
+        <h2 id="access-title">Sign in</h2>
+        <form id="access-form">
+          <label>Email address <input name="email" type="email" autocomplete="email" maxlength="254" required></label>
+          <label>Password <input name="password" type="password" autocomplete="current-password" maxlength="128" required></label>
+          <button id="access-submit" type="submit">Sign in</button>
+        </form>
+        <button id="access-switch" class="link">Create an account</button>
+      </div>
+    </section>
+    <section id="customer" hidden>
+      <h1>Support workspace</h1>
+      <p id="customer-email"></p>
+      <div class="workspace">
+        <section class="card">
+          <h2>New support ticket</h2>
+          <form id="ticket-form">
+            <label>Describe the issue
+              <textarea name="message" rows="6" minlength="10" maxlength="2000" required aria-describedby="ticket-hint"></textarea>
+            </label>
+            <p id="ticket-hint">Use a fictional support issue for this demo.</p>
+            <button type="submit">Submit ticket</button>
+          </form>
+          <button id="sample" class="link">Use an outage example</button>
+        </section>
+        <section class="card" aria-live="polite">
+          <h2>Recent tickets</h2>
+          <p id="usage"></p>
+          <ul id="tickets"></ul>
+        </section>
+      </div>
+    </section>
+    <section id="admin" hidden>
+      <h1>Administrator dashboard</h1>
+      <p id="admin-email"></p>
+      <div class="card">
+        <h2>Registered users</h2>
+        <p id="totals"></p>
+        <div class="table-wrap"><table>
+          <thead><tr><th scope="col">Email</th><th scope="col">Role</th><th scope="col">Registered (UTC)</th></tr></thead>
+          <tbody id="users"></tbody>
+        </table></div>
+        <button id="more-users" class="link" hidden>Load more users</button>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
