@@ -19,7 +19,8 @@
     <section id="access" class="access" hidden>
       <div class="intro">
         <h1>NorthLink support</h1>
-        <p>Submit a support request and follow it as it’s routed to the right team.</p>
+        <p>Submit a support request and follow its progress from assignment to resolution.</p>
+        <p class="muted">NorthLink Internet is fictional. Use a fictional email address and support message.</p>
       </div>
       <div class="card">
         <h2 id="access-title">Sign in</h2>
@@ -33,7 +34,7 @@
     </section>
     <section id="customer" hidden>
       <h1>Support workspace</h1>
-      <p id="customer-email"></p>
+      <p id="customer-email" class="workspace-account"></p>
       <div class="workspace">
         <section class="card">
           <h2>New support ticket</h2>
@@ -41,31 +42,130 @@
             <label>Describe the issue
               <textarea name="message" rows="6" minlength="10" maxlength="2000" required aria-describedby="ticket-hint"></textarea>
             </label>
-            <p id="ticket-hint">Use a fictional support issue for this demo.</p>
-            <button type="submit">Submit ticket</button>
+            <p id="ticket-hint" class="muted">Jev AI reads your message to suggest a team and urgency. Staff review uncertain tickets and can correct assignments. Use fictional details only.</p>
+            <button id="ticket-submit" type="submit">Submit ticket</button>
           </form>
-          <button id="sample" class="link">Use an outage example</button>
+          <fieldset id="ticket-examples" class="examples">
+            <legend>Try a sample</legend>
+            <button type="button" data-sample="outage">Outage</button>
+            <button type="button" data-sample="billing">Duplicate charge</button>
+            <button type="button" data-sample="account">Password reset</button>
+            <button type="button" data-sample="plan">Plan inquiry</button>
+          </fieldset>
         </section>
-        <section class="card" aria-live="polite">
-          <h2>Recent tickets</h2>
-          <p id="usage"></p>
+        <section class="card" aria-labelledby="customer-tickets-title">
+          <h2 id="customer-tickets-title">Your tickets</h2>
+          <p id="usage" class="muted" role="status"></p>
           <ul id="tickets"></ul>
+          <div class="ticket-actions">
+            <button id="refresh-customer-tickets" type="button" class="link">Refresh tickets</button>
+            <button id="more-customer-tickets" type="button" class="link" hidden>Load older tickets</button>
+          </div>
         </section>
       </div>
     </section>
-    <section id="admin" hidden>
-      <h1>Administrator dashboard</h1>
-      <p id="admin-email"></p>
-      <div class="card">
+    <section id="staff" hidden>
+      <h1 id="staff-title">Support dashboard</h1>
+      <p id="staff-email" class="workspace-account"></p>
+      <details class="card staff-section stats">
+        <summary><span>Ticket statistics</span><span id="stats-total" class="muted">Loading…</span></summary>
+        <div id="stats-breakdown" class="stats-grid"></div>
+      </details>
+      <section class="card staff-section" aria-labelledby="queue-title">
+        <h2 id="queue-title" tabindex="-1">Ticket queue</h2>
+        <form id="queue-form" class="queue-filters" role="search" aria-label="Search and filter tickets">
+          <label class="queue-search">Search tickets <input name="q" type="search" maxlength="200" placeholder="Message, ticket ID, or email"></label>
+          <label>Department
+            <select name="department">
+              <option value="">All departments</option>
+              <option value="billing">Billing</option>
+              <option value="technical">Technical</option>
+              <option value="account">Account</option>
+              <option value="general">General Support</option>
+              <option value="unassigned">Unassigned</option>
+            </select>
+          </label>
+          <label>Status
+            <select name="status">
+              <option value="">All statuses</option>
+              <option value="manual_review">Awaiting manual review</option>
+              <option value="open">Open</option>
+              <option value="in_progress">In progress</option>
+              <option value="resolved">Resolved</option>
+              <option value="closed">Closed</option>
+            </select>
+          </label>
+          <label>Sort by
+            <select name="sort">
+              <option value="priority">Highest priority</option>
+              <option value="newest">Newest first</option>
+            </select>
+          </label>
+          <button id="apply-filters" type="submit">Apply filters</button>
+        </form>
+        <p id="queue-state" class="muted" role="status"></p>
+        <ul id="queue-tickets"></ul>
+        <button id="more-tickets" type="button" class="link" hidden>Load more tickets</button>
+      </section>
+      <section id="admin-users" class="card staff-section" hidden>
         <h2>Registered users</h2>
-        <p id="totals"></p>
+        <p id="totals" class="muted" role="status"></p>
         <div class="table-wrap"><table>
           <thead><tr><th scope="col">Email</th><th scope="col">Role</th><th scope="col">Registered (UTC)</th></tr></thead>
           <tbody id="users"></tbody>
         </table></div>
-        <button id="more-users" class="link" hidden>Load more users</button>
-      </div>
+        <button id="more-users" type="button" class="link" hidden>Load more users</button>
+      </section>
     </section>
+    <dialog id="ticket-detail" aria-labelledby="detail-title">
+      <div class="dialog-header">
+        <h2 id="detail-title">Ticket details</h2>
+        <form method="dialog"><button type="submit" class="secondary" autofocus>Close</button></form>
+      </div>
+      <p id="detail-notice" role="status"></p>
+      <div id="detail-content" hidden>
+        <p id="detail-id" class="ticket-id muted"></p>
+        <p id="detail-submitted" class="muted"></p>
+        <p id="detail-message" class="detail-message"></p>
+        <dl id="detail-routing" class="routing-summary"></dl>
+        <section id="detail-jev" class="jev-result" hidden>
+          <h3>Original Jev classification</h3>
+          <p id="detail-classification"></p>
+        </section>
+        <form id="edit-ticket" hidden>
+          <h3 id="edit-title">Update ticket</h3>
+          <fieldset id="edit-fields" class="ticket-fields" aria-labelledby="edit-title">
+            <label>Assigned department
+              <select name="department">
+                <option value="">Unassigned</option>
+                <option value="billing">Billing</option>
+                <option value="technical">Technical</option>
+                <option value="account">Account</option>
+                <option value="general">General Support</option>
+              </select>
+            </label>
+            <label>Priority
+              <select name="priority">
+                <option value="">Unprioritized</option>
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+              </select>
+            </label>
+            <label>Status
+              <select name="status">
+                <option value="manual_review">Awaiting manual review</option>
+                <option value="open">Open</option>
+                <option value="in_progress">In progress</option>
+                <option value="resolved">Resolved</option>
+                <option value="closed">Closed</option>
+              </select>
+            </label>
+          </fieldset>
+          <button id="edit-save" type="submit">Save changes</button>
+        </form>
+      </div>
+    </dialog>
   </main>
 </body>
 </html>
