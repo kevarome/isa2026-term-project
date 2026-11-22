@@ -27,7 +27,13 @@
         <h2 id="access-title">Sign in</h2>
         <form id="access-form">
           <label>Email address <input name="email" type="email" autocomplete="email" maxlength="254" required></label>
-          <label>Password <input name="password" type="password" autocomplete="current-password" maxlength="128" required></label>
+          <div class="password-field">
+            <label for="access-password">Password</label>
+            <div class="password-entry">
+              <input id="access-password" name="password" type="password" autocomplete="current-password" maxlength="128" required>
+              <button type="button" class="secondary" data-password-toggle="password" aria-controls="access-password" aria-label="Show password">Show</button>
+            </div>
+          </div>
           <button id="access-submit" type="submit">Sign in</button>
         </form>
         <button id="access-switch" class="link">Create an account</button>

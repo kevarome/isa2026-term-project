@@ -108,7 +108,14 @@ function errorMessage(error) {
   return error instanceof TypeError ? 'Could not reach the API. Try again.' : error.message;
 }
 
+function setPasswordVisible(button, visible) {
+  $(button.getAttribute('aria-controls')).type = visible ? 'text' : 'password';
+  button.textContent = visible ? 'Hide' : 'Show';
+  button.setAttribute('aria-label', `${button.textContent} ${button.dataset.passwordToggle}`);
+}
+
 function updateAccessForm() {
+  setPasswordVisible(accessForm.querySelector('[data-password-toggle]'), false);
   $('access-title').textContent = registering ? 'Create an account' : 'Sign in';
   $('access-submit').textContent = $('access-title').textContent;
   $('access-switch').textContent = registering ? 'Back to sign in' : 'Create an account';
@@ -385,6 +392,10 @@ async function run(task, button) {
   }
 }
 
+for (const button of $('access').querySelectorAll('[data-password-toggle]')) {
+  button.onclick = () => setPasswordVisible(button, $(button.getAttribute('aria-controls')).type === 'password');
+}
+
 $('access-switch').onclick = () => {
   registering = !registering;
   updateAccessForm();
@@ -409,6 +420,7 @@ accessForm.onsubmit = event => {
       await openWorkspace(result.user);
     } finally {
       accessForm.elements.password.value = '';
+      setPasswordVisible(accessForm.querySelector('[data-password-toggle]'), false);
       $('access-switch').disabled = false;
     }
   }, $('access-submit'));
