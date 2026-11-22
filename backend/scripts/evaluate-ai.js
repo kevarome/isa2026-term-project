@@ -1,6 +1,7 @@
 import { parseArgs } from 'node:util';
 import { fixtureResponse, syntheticTickets } from '../fixtures/synthetic-tickets.js';
 import { classify, clefModel, jevModel } from '../src/classifier.js';
+import { createWorkersAi } from './workers-ai.js';
 
 function getLiveBinding() {
   const account = process.env.CLOUDFLARE_ACCOUNT_ID;
@@ -8,22 +9,7 @@ function getLiveBinding() {
   if (!/^[0-9a-f]{32}$/i.test(account ?? '') || !token) {
     throw new Error('Set CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN for live inference.');
   }
-  return {
-    async run(model, input) {
-      const native = model === clefModel;
-      const path = native ? '/ai/run/' + model : '/ai/run';
-      const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${account}${path}`, {
-        method: 'POST',
-        headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
-        body: JSON.stringify(native ? input : { model, input }),
-        signal: AbortSignal.timeout(12000)
-      });
-      if (!response.ok) throw new Error('Workers AI HTTP ' + response.status);
-      const data = await response.json();
-      if (data.success === false) throw new Error('Workers AI reported a failure.');
-      return data.result ?? data;
-    }
-  };
+  return createWorkersAi(account, () => token);
 }
 
 function summarize(observations) {

@@ -34,7 +34,7 @@ The seed also provides Billing, Account, and General Support logins. It can be r
 2. As staff, open your department’s queue. Search by message, ticket ID, or customer email. Filter by department or status, sort by priority or date, and open a ticket to change its assignment, priority, or status. The review queue lets staff assign tickets that need a human decision.
 3. As an administrator, open **API usage** to see request volume, errors, processing time, and the most active endpoints and accounts. Change the reporting period or refresh after using the app. **Ticket queue** contains ticket statistics and staff workflows. **Registered users** lists the accounts.
 
-Local mode saves fresh submissions for manual review. Seeded examples exercise the four queues and are identified as demo tickets. For live Clef Flash classification with local D1, authenticate Wrangler and use `npm run dev:ai` in place of `npm run dev`. [Clef Flash model documentation](https://developers.cloudflare.com/workers-ai/models/clef-flash/)
+Offline mode saves fresh submissions for manual review. Seeded examples exercise the four queues and are identified as demo tickets. For live Clef Flash classification with the same local D1 database, sign in with `npx wrangler login` and start the API with `npm run dev:ai`. This connects directly to Workers AI without a `workers.dev` subdomain. See the [live AI setup](backend/README.md#local-api-and-demo-data).
 
 ## Architecture
 

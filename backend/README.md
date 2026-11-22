@@ -16,7 +16,7 @@ npm.cmd run dev
 
 On macOS or Linux, use `npm` and `npx` in place of `npm.cmd` and `npx.cmd`, and use `node scripts/demo-sql.js --tickets > .wrangler/demo.sql` to write the seed file.
 
-The API runs at `http://localhost:8787`. Running `npm run dev` uses local D1 and queues new submissions for manual review. For live inference with local D1, authenticate Wrangler with `npx wrangler login` and run `npm run dev:ai` in place of `npm run dev`.
+The API runs at `http://localhost:8787`. Running `npm run dev` uses local D1 and queues new submissions for manual review. For live inference, sign in with `npx wrangler login` and run `npm run dev:ai` in place of `npm run dev`. This runs the Express API against the same local D1 database and calls the Workers AI REST API directly. You can use it without a `workers.dev` subdomain. If you have multiple Cloudflare accounts, set `CLOUDFLARE_ACCOUNT_ID` to the account with Workers AI access. To use a Workers AI API token, set `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` before starting the server.
 
 Clef Flash (`@cf/cloudflare/clef-flash`) is the default. Its inference uses the Workers AI free daily allocation while quota is available. To select TypeSafe Jev for local development, run `npm run dev:ai -- --var AI_MODEL:typesafe/jev`. Jev uses third-party AI Gateway billing. [Clef Flash documentation](https://developers.cloudflare.com/workers-ai/models/clef-flash/) · [Workers AI pricing](https://developers.cloudflare.com/workers-ai/platform/pricing/) · [AI Gateway billing](https://developers.cloudflare.com/ai-gateway/features/unified-billing/)
 
