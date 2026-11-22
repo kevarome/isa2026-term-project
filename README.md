@@ -60,34 +60,77 @@ flowchart LR
 
 The static client and API use separate origins. The API sends only the support message to the configured model. The validated choices, confidence, and model ID are stored separately from the current assignment and priority. Results below the routing threshold, invalid responses, timeouts, and provider failures go to manual review. Final status and routing changes are staff actions. The browser keeps an eight-hour session token in session storage and D1 stores its digest. The API checks roles and customer ticket ownership on each protected request.
 
-| Method | Endpoint | Access |
+## API reference
+
+The local base URL is `http://localhost:8787/api`. All paths below are relative to it. Send request bodies as JSON with `Content-Type: application/json`. For protected routes, send the token returned by login in the `Authorization: Bearer <token>` header. A successful read or update returns HTTP 200 unless another status is listed.
+
+### Authentication and health
+
+| Method and path | Access | Request and result |
 | --- | --- | --- |
-| GET | `/api/health` | Public |
-| POST | `/api/auth/register`, `/api/auth/login` | Public |
-| GET | `/api/auth/me` | Signed in |
-| POST | `/api/auth/logout` | Signed in |
-| POST | `/api/tickets` | Signed in |
-| GET | `/api/tickets`, `/api/tickets/:id` | Own tickets for customers, all queues for staff and admins |
-| PATCH | `/api/tickets/:id` | Staff and admins |
-| GET | `/api/stats` | Staff and admins |
-| GET | `/api/admin/users`, `/api/admin/tickets` | Admins |
-| GET | `/api/admin/usage?days=7` | Admins |
+| `GET /health` | Public | Returns `{"status":"ok","database":"connected"}` after a database query. |
+| `POST /auth/register` | Public | Send `email` and a `password` of 12–128 characters. Returns 201 with `user`. New accounts have the customer role (`user`). |
+| `POST /auth/login` | Public | Send `email` and `password`. Returns `token` and `user`. |
+| `GET /auth/me` | Signed in | Returns the current `user`, including their role. |
+| `POST /auth/logout` | Signed in | Ends the current session. Returns `{"signedOut":true}`. |
+| `POST /auth/password-reset/request` | Public | Send `email`. Returns 202 with `accepted` and `delivery` (`local` or `email`) for a valid address, including an unknown one. |
+| `POST /auth/password-reset/confirm` | Public | Send the reset `token` from the link and the new `password`. Returns `{"reset":true}` and ends all sessions for that account. Links expire after 30 minutes. |
 
-List filters are `q`, `department`, `status`, and `sort`. A response’s `next` cursor can be used as `after` with the same filters. PATCH accepts `department`, `priority`, and `status`. Include the ticket’s `version` to detect intervening changes. Statistics distinguish original AI categories from current department, priority, and status counts.
+### Tickets and administration
 
-Staff ticket responses include `classification_model`, `classification_department`, and `classification_urgency`. Existing clients can still read `jev_department` and `jev_urgency` as aliases.
+| Method and path | Access | Request and result |
+| --- | --- | --- |
+| `POST /tickets` | Signed in | Send `{"message":"My internet connection is down."}` (10–2,000 characters after trimming). Returns 201 with `ticket`. |
+| `GET /tickets` | Signed in | Returns `tickets` and `next`. Customers see their own tickets and a submission count in `usage`. Staff and admins see all queues. |
+| `GET /tickets/:id` | Ticket owner, staff, admin | Returns `ticket`. |
+| `PATCH /tickets/:id` | Staff, admin | Send at least one of `department`, `priority`, or `status`. Include the `version` from the latest staff read to detect concurrent edits. Returns the updated `ticket`. |
+| `GET /stats` | Staff, admin | Returns `total`, `byCategory` (original AI department), `byDepartment`, `byStatus`, and `byPriority`. |
+| `GET /admin/tickets` | Admin | Lists all tickets, newest first by default. Returns `tickets` and `next`. |
+| `GET /admin/users` | Admin | Returns up to 50 accounts in email order, plus `next` and `totals`. Each account includes its `id`. |
+| `GET /admin/usage?days=7` | Admin | Accepts 7 (default), 30, or 90 days. Returns a summary, daily counts, endpoints, and top users for the period. |
+| `DELETE /admin/tickets/:id` | Admin | Use the ticket ID and an empty request body. Permanently deletes the ticket. Returns `{"deleted":true}`. Historical submission and request counts are preserved. |
+| `DELETE /admin/users/:id` | Admin | Use the account ID and an empty request body. Permanently removes the account, its tickets, sessions, password reset links, staff profile, and submission records. Previous API requests keep their event counts and lose the account association. Returns `{"deleted":true}`. Removing the signed-in admin's own account returns 409. |
 
-## Test and evaluate
+Ticket lists accept `q` (message or ticket ID, also email for staff and admins), `department`, `status`, and `sort` (`newest` or `priority`). Filter departments by `billing`, `technical`, `account`, `general`, or `unassigned`. Status values are `manual_review`, `open`, `in_progress`, `resolved`, and `closed`. Ticket pages contain up to 30 entries. Pass the previous response's `next` value as `after` on the same endpoint with the same filters and sort. A `null` cursor marks the last page.
 
-Run these from `backend`.
+When editing a ticket, use `low`, `medium`, or `high` for priority. Use JSON `null` to clear a department or priority. Staff and admin ticket reads include the original `classification_model`, `classification_outcome`, `classification_department`, and `classification_urgency`. Existing clients can still read `jev_department` and `jev_urgency` as aliases.
+
+Errors use `{"error":"…"}`. A malformed request returns 400, an invalid or expired session returns 401, and insufficient privileges return 403. A missing ticket or user returns 404 on deletion, including a repeated delete. A stale ticket version returns 409. Authentication and ticket-submission rate limits return 429.
+
+This PowerShell example signs in as the local demo admin, lists registered users, and closes the session.
+
+```powershell
+$api = 'http://localhost:8787/api'
+$body = @{ email = 'admin@admin.com'; password = '111' } | ConvertTo-Json
+$session = Invoke-RestMethod -Method Post -Uri "$api/auth/login" -ContentType 'application/json' -Body $body
+$headers = @{ Authorization = "Bearer $($session.token)" }
+(Invoke-RestMethod -Uri "$api/admin/users" -Headers $headers).users | Select-Object id,email,role
+Invoke-RestMethod -Method Post -Uri "$api/auth/logout" -Headers $headers
+```
+
+## Testing
+
+Run the automated tests and offline model evaluation from `backend` after installing the locked dependencies with `npm.cmd ci`.
 
 ```powershell
 npm.cmd test
 npm.cmd run evaluate:ai -- --repeats 3
 ```
 
-The tests use isolated SQLite and simulated inference responses. They cover all four routing scenarios, access rules, searches, pagination, manual review, ticket edits, and statistics. The evaluation groups repeated observations by writing style using a synthetic dataset. The offline run verifies the tool. Use `--live` with Workers AI credentials to measure Clef Flash on the same dataset. Use `--model` to name a model explicitly or run `npm run evaluate:jev` to select Jev. The [Postman collection](backend/test/TicketMaestro.postman_collection.json) exercises the running API.
+The test suite uses isolated SQLite databases and simulated inference. It covers authentication, password reset, routing, pagination, ticket edits, report totals, and admin deletion. The evaluation groups repeated observations by writing style. For live measurements, set `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` and add `--live` to the evaluation command. Use `--model` to name a supported model or run `npm run evaluate:jev` to select Jev.
 
-## Deploy
+To test the running API in Postman, import the collection and set its `baseUrl`, `customerEmail`, `customerPassword`, `staffEmail`, and `staffPassword` variables. Run the collection in order to sign in, submit a synthetic ticket, read and update it, check statistics, and sign out. [Postman collection](backend/test/TicketMaestro.postman_collection.json)
 
-Use a Cloudflare account with Workers AI access, D1 access, and permission to deploy Workers. The backend guide covers model selection, migrations, and a hosted end-to-end check. Use synthetic messages in the demo and private passwords if seeding hosted accounts. [Backend deployment guide](backend/README.md#cloudflare-deployment) · [Client deployment guide](frontend/README.md#deploy)
+To check deletion through the UI, register a disposable customer in the local demo and submit two tickets as that customer. Sign in as the admin, delete one ticket from **Ticket queue**, then remove the customer from **Registered users**. Verify the second ticket has disappeared from the queue and the removed account can no longer sign in.
+
+## Deployment
+
+The hosted demo runs on Cloudflare Workers. [Open TicketMaestro](https://ticketmaestro-client.kevyn-anthoni.workers.dev) · [API health](https://ticketmaestro-api.kevyn-anthoni.workers.dev/api/health)
+
+Deploy the API and client as separate Cloudflare Workers. The deploying account needs access to D1, Workers AI, and Workers deployment. Use a Worker CPU limit sufficient for the application's scrypt password hashing.
+
+1. **Prepare D1.** From `backend`, run `npm.cmd ci` and `npx.cmd wrangler login`. For a new database, run `npx.cmd wrangler d1 create ticketmaestro`. In `backend/wrangler.toml`, set the `DB` binding's `database_id` and `database_name` to the remote database. [Cloudflare D1 setup](https://developers.cloudflare.com/d1/get-started/)
+2. **Configure the API.** Set `CLIENT_ORIGIN` to the client’s HTTPS origin (including the scheme, without a trailing slash). Keep the `AI` binding for live classification. To enable hosted password reset, configure a verified sender and a Resend secret. [Password reset configuration](backend/README.md#password-reset)
+3. **Migrate and deploy the API.** From `backend`, run `npm.cmd run db:remote` and then `npm.cmd run deploy`. Record the API origin printed by Wrangler. For a hosted demonstration, seed the staff and admin accounts with private passwords using the backend guide. [Backend deployment and seeding](backend/README.md#cloudflare-deployment)
+4. **Deploy the client.** In `frontend/public/config.js`, set `API_ORIGIN` to the deployed API origin. In `frontend/public/_headers`, set the `connect-src` directive to allow that same origin. From the repository root, run `./backend/node_modules/.bin/wrangler.cmd deploy --config frontend/wrangler.toml`. If the resulting client origin differs from `CLIENT_ORIGIN`, update the backend configuration and redeploy the API. [Client deployment guide](frontend/README.md#deploy)
+5. **Verify the deployment.** Request `GET /api/health` on the deployed API and check for `"database":"connected"`. Sign in through the hosted client, submit a synthetic ticket, and open it in the staff queue to verify routing and persistence.
