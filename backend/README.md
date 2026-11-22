@@ -33,6 +33,12 @@ The seed can be rerun. It preserves existing account passwords, roles, tickets, 
 
 Use these defaults in an isolated synthetic demo. For a hosted account seed, provide distinct private values through the shell environment using `TICKETMAESTRO_DEMO_CUSTOMER_PASSWORD`, `TICKETMAESTRO_DEMO_ADMIN_PASSWORD`, and `TICKETMAESTRO_DEMO_STAFF_PASSWORD` before generating SQL. The staff override applies to the four demo staff accounts. The generator writes only password hashes. Keep the SQL file out of version control.
 
+## Password reset
+
+From the sign-in screen, select **Forgot password?** and enter the account email. Both local development commands write the reset link to the API terminal. Open that link to choose a new password. Links expire in 30 minutes and a successful reset signs the account out of all sessions.
+
+To enable reset emails on a hosted Worker, set `PASSWORD_RESET_FROM` in the Worker's `[vars]` to a sender on a verified Resend domain, store the Resend sending key with `npx wrangler secret put RESEND_API_KEY`, and set `CLIENT_ORIGIN` to the HTTPS origin of the app. Apply the D1 migrations before deploying. Hosted email recovery is disabled for the reserved demo accounts. [Resend send email API](https://resend.com/docs/api-reference/emails/send-email)
+
 ## Administrator API usage
 
 An administrator can request `GET /api/admin/usage?days=7` with their bearer token. The report covers the last 7, 30, or 90 UTC calendar days, including today. It returns request and error totals, average processing time in milliseconds, active account count, daily activity, endpoint traffic and the ten accounts with the most requests. Errors include HTTP 4xx and 5xx responses. Processing time ends before the usage write and excludes client network time.

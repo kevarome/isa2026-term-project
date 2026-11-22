@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev --local --port 8787 --var AI_MODE:offline",
+    "dev": "wrangler dev --local --port 8787 --var AI_MODE:offline --var PASSWORD_RESET_MODE:local",
     "dev:ai": "node scripts/dev-ai.js",
     "test": "node --test",
     "evaluate:ai": "node scripts/evaluate-ai.js",

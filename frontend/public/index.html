@@ -24,7 +24,7 @@
         <p class="muted">NorthLink Internet is fictional. Use a fictional email address and support message.</p>
       </div>
       <div class="card">
-        <h2 id="access-title">Sign in</h2>
+        <h2 id="access-title" tabindex="-1">Sign in</h2>
         <form id="access-form">
           <label>Email address <input name="email" type="email" autocomplete="email" maxlength="254" required></label>
           <div class="password-field">
@@ -36,7 +36,33 @@
           </div>
           <button id="access-submit" type="submit">Sign in</button>
         </form>
-        <button id="access-switch" class="link">Create an account</button>
+        <form id="reset-request-form" hidden>
+          <label>Email address <input name="email" type="email" autocomplete="email" maxlength="254" required></label>
+          <button id="reset-request-submit" type="submit">Request reset link</button>
+        </form>
+        <form id="reset-password-form" hidden>
+          <div class="password-field">
+            <label for="new-password">New password</label>
+            <div class="password-entry">
+              <input id="new-password" name="password" type="password" autocomplete="new-password" minlength="12" maxlength="128" required aria-describedby="new-password-hint">
+              <button type="button" class="secondary" data-password-toggle="new password" aria-controls="new-password" aria-label="Show new password">Show</button>
+            </div>
+            <p id="new-password-hint" class="muted">Use at least 12 characters.</p>
+          </div>
+          <div class="password-field">
+            <label for="confirm-password">Confirm new password</label>
+            <div class="password-entry">
+              <input id="confirm-password" name="confirmation" type="password" autocomplete="new-password" minlength="12" maxlength="128" required>
+              <button type="button" class="secondary" data-password-toggle="password confirmation" aria-controls="confirm-password" aria-label="Show password confirmation">Show</button>
+            </div>
+          </div>
+          <button id="reset-password-submit" type="submit">Reset password</button>
+        </form>
+        <div class="access-actions">
+          <button id="access-switch" type="button" class="link">Create an account</button>
+          <button id="forgot-password" type="button" class="link">Forgot password?</button>
+          <button id="reset-back" type="button" class="link" hidden>Back to sign in</button>
+        </div>
       </div>
     </section>
     <section id="customer" hidden>

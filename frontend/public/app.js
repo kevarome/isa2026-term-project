@@ -3,6 +3,8 @@ import { setupUsageReport } from './usage.js';
 
 const $ = id => document.getElementById(id);
 const accessForm = $('access-form');
+const resetRequestForm = $('reset-request-form');
+const resetPasswordForm = $('reset-password-form');
 const ticketForm = $('ticket-form');
 const queueForm = $('queue-form');
 const detailDialog = $('ticket-detail');
@@ -35,7 +37,8 @@ const examples = {
 };
 const percent = new Intl.NumberFormat(undefined, { style: 'percent', maximumFractionDigits: 1 });
 let token = sessionStorage.getItem('ticketmaestro-token');
-let registering = false;
+let accessMode = 'login';
+let resetToken = null;
 let nextUser = null;
 let nextCustomerTicket = null;
 let nextQueueTicket = null;
@@ -114,14 +117,46 @@ function setPasswordVisible(button, visible) {
   button.setAttribute('aria-label', `${button.textContent} ${button.dataset.passwordToggle}`);
 }
 
-function updateAccessForm() {
-  setPasswordVisible(accessForm.querySelector('[data-password-toggle]'), false);
-  $('access-title').textContent = registering ? 'Create an account' : 'Sign in';
-  $('access-submit').textContent = $('access-title').textContent;
+function setAccessMode(mode) {
+  accessMode = mode;
+  const registering = mode === 'register';
+  const authenticating = mode === 'login' || registering;
+  const title = { login: 'Sign in', register: 'Create an account', request: 'Forgot password?', reset: 'Reset password' };
+  $('access-title').textContent = title[mode];
+  accessForm.hidden = !authenticating;
+  resetRequestForm.hidden = mode !== 'request';
+  resetPasswordForm.hidden = mode !== 'reset';
+  $('access-submit').textContent = title[mode];
+  $('access-switch').hidden = !authenticating;
   $('access-switch').textContent = registering ? 'Back to sign in' : 'Create an account';
+  $('forgot-password').hidden = mode !== 'login';
+  $('reset-back').hidden = authenticating;
   const password = accessForm.elements.password;
+  password.value = '';
   password.autocomplete = registering ? 'new-password' : 'current-password';
   password.minLength = registering ? 12 : 1;
+  resetPasswordForm.reset();
+  for (const button of $('access').querySelectorAll('[data-password-toggle]')) setPasswordVisible(button, false);
+  if (mode !== 'reset') resetToken = null;
+}
+
+function openResetLink() {
+  const prefix = '#reset-password=';
+  if (!location.hash.startsWith(prefix)) return false;
+  const value = location.hash.slice(prefix.length);
+  history.replaceState(history.state, '', location.pathname + location.search);
+  show('access');
+  if (!/^[a-f0-9]{64}$/.test(value)) {
+    setAccessMode('request');
+    notify('This reset link is invalid. Request a new one.', true);
+    resetRequestForm.elements.email.focus();
+    return true;
+  }
+  resetToken = value;
+  setAccessMode('reset');
+  notify();
+  resetPasswordForm.elements.password.focus();
+  return true;
 }
 
 function ticketPriority(ticket) {
@@ -397,8 +432,21 @@ for (const button of $('access').querySelectorAll('[data-password-toggle]')) {
 }
 
 $('access-switch').onclick = () => {
-  registering = !registering;
-  updateAccessForm();
+  setAccessMode(accessMode === 'register' ? 'login' : 'register');
+  notify();
+};
+
+$('forgot-password').onclick = () => {
+  resetRequestForm.elements.email.value = accessForm.elements.email.value;
+  setAccessMode('request');
+  resetRequestForm.elements.email.focus();
+  notify();
+};
+
+$('reset-back').onclick = () => {
+  if (accessMode === 'request') accessForm.elements.email.value = resetRequestForm.elements.email.value;
+  setAccessMode('login');
+  accessForm.elements.email.focus();
   notify();
 };
 
@@ -407,11 +455,11 @@ accessForm.onsubmit = event => {
   void run(async () => {
     const credentials = Object.fromEntries(new FormData(accessForm));
     $('access-switch').disabled = true;
+    $('forgot-password').disabled = true;
     try {
-      if (registering) {
+      if (accessMode === 'register') {
         await api('/auth/register', credentials);
-        registering = false;
-        updateAccessForm();
+        setAccessMode('login');
         notify('Account created. Sign in to continue.');
         return;
       }
@@ -422,8 +470,44 @@ accessForm.onsubmit = event => {
       accessForm.elements.password.value = '';
       setPasswordVisible(accessForm.querySelector('[data-password-toggle]'), false);
       $('access-switch').disabled = false;
+      $('forgot-password').disabled = false;
     }
   }, $('access-submit'));
+};
+
+resetRequestForm.onsubmit = event => {
+  event.preventDefault();
+  void run(async () => {
+    $('reset-back').disabled = true;
+    try {
+      const { delivery } = await api('/auth/password-reset/request', { email: resetRequestForm.elements.email.value });
+      if (delivery === 'local') notify('If an account matches that email, a reset link will appear in the local API log.');
+      else notify('If an account matches that email, you’ll receive a password reset link.');
+    } finally {
+      $('reset-back').disabled = false;
+    }
+  }, $('reset-request-submit'));
+};
+
+resetPasswordForm.onsubmit = event => {
+  event.preventDefault();
+  void run(async () => {
+    const { password, confirmation } = resetPasswordForm.elements;
+    if (password.value !== confirmation.value) {
+      confirmation.focus();
+      throw new Error('The passwords do not match.');
+    }
+    $('reset-back').disabled = true;
+    try {
+      await api('/auth/password-reset/confirm', { token: resetToken, password: password.value });
+      saveToken(null);
+      setAccessMode('login');
+      accessForm.elements.email.focus();
+      notify('Password updated. Sign in with your new password.');
+    } finally {
+      $('reset-back').disabled = false;
+    }
+  }, $('reset-password-submit'));
 };
 
 for (const button of $('ticket-examples').querySelectorAll('button')) {
@@ -535,7 +619,7 @@ $('more-customer-tickets').onclick = () => void run(() => loadCustomerTickets(ne
 $('more-users').onclick = () => void run(() => loadUsers(nextUser), $('more-users'));
 $('more-tickets').onclick = () => void run(() => loadQueue(queueFilters, nextQueueTicket));
 window.addEventListener('hashchange', () => {
-  if (document.body.classList.contains('admin-mode')) void run(() => openAdminPage(true));
+  if (!openResetLink() && document.body.classList.contains('admin-mode')) void run(() => openAdminPage(true));
 });
 $('logout').onclick = () => void run(async () => {
   await api('/auth/logout', {});
@@ -544,13 +628,15 @@ $('logout').onclick = () => void run(async () => {
   show('access');
 }, $('logout'));
 
-if (token) {
-  try {
-    await openWorkspace((await api('/auth/me')).user);
-  } catch (error) {
-    if ($('staff').hidden && $('customer').hidden) show('access');
-    notify(errorMessage(error), true);
+if (!openResetLink()) {
+  if (token) {
+    try {
+      await openWorkspace((await api('/auth/me')).user);
+    } catch (error) {
+      if ($('staff').hidden && $('customer').hidden) show('access');
+      notify(errorMessage(error), true);
+    }
+  } else {
+    show('access');
   }
-} else {
-  show('access');
 }

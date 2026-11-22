@@ -1,9 +1,12 @@
 import express from 'express';
 import { hashPassword, verifyPassword } from './password.js';
+import { resetDelivery, resetLinkMinutes } from './reset-delivery.js';
 import { registerTicketRoutes } from './tickets.js';
 import { trackUsage, usageReport } from './usage.js';
 
 const SESSION_SECONDS = 8 * 60 * 60;
+const passwordLengthError = 'Use a password between 12 and 128 characters.';
+const invalidReset = 'This reset link is invalid or expired. Request a new one.';
 const demoEmails = [
   'john@john.com', 'admin@admin.com',
   'billing@example.test', 'technical@example.test', 'account@example.test', 'general@example.test'
@@ -21,7 +24,12 @@ async function digest(value) {
   return Buffer.from(hash).toString('hex');
 }
 
-export function createApp(env) {
+const newToken = () => Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('hex');
+const normalizeEmail = email => typeof email === 'string' ? email.trim().toLowerCase() : '';
+const validEmail = email => email.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+const validNewPassword = password => typeof password === 'string' && password.length >= 12 && password.length <= 128;
+
+export function createApp(env, waitUntil) {
   const app = express();
   const db = env.DB;
   app.disable('x-powered-by');
@@ -81,13 +89,13 @@ export function createApp(env) {
   });
 
   app.post('/api/auth/register', authLimit, async (req, res) => {
-    const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+    const email = normalizeEmail(req.body?.email);
     const password = req.body?.password;
-    if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    if (!validEmail(email)) {
       return res.status(400).json({ error: 'Enter a valid email address.' });
     }
-    if (typeof password !== 'string' || password.length < 12 || password.length > 128) {
-      return res.status(400).json({ error: 'Use a password between 12 and 128 characters.' });
+    if (!validNewPassword(password)) {
+      return res.status(400).json({ error: passwordLengthError });
     }
     if (demoEmails.includes(email)) return res.status(409).json({ error: 'This email is reserved.' });
     const user = { id: crypto.randomUUID(), email, role: 'user' };
@@ -100,7 +108,7 @@ export function createApp(env) {
   });
 
   app.post('/api/auth/login', authLimit, async (req, res) => {
-    const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+    const email = normalizeEmail(req.body?.email);
     const password = req.body?.password;
     if (!email || email.length > 254 || typeof password !== 'string' || !password || password.length > 128) {
       return res.status(400).json({ error: 'Enter your email and password.' });
@@ -114,14 +122,65 @@ export function createApp(env) {
     const valid = await verifyPassword(password, record?.password_hash ?? 'unused-salt:' + '0'.repeat(128));
     if (!record || !valid) return res.status(401).json({ error: 'Email or password is incorrect.' });
 
-    const token = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('hex');
-    await db.batch([
+    const token = newToken();
+    const [, session] = await db.batch([
       db.prepare('DELETE FROM sessions WHERE expires_at <= unixepoch()'),
-      db.prepare('INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, unixepoch() + ?)')
-        .bind(await digest(token), record.id, SESSION_SECONDS)
+      db.prepare(`
+        INSERT INTO sessions (token_hash, user_id, expires_at)
+        SELECT ?, id, unixepoch() + ? FROM users WHERE id = ? AND password_hash = ?
+        RETURNING user_id
+      `).bind(await digest(token), SESSION_SECONDS, record.id, record.password_hash)
     ]);
+    if (!session.results.length) return res.status(401).json({ error: 'Email or password is incorrect.' });
     res.locals.user = identity(record);
     res.json({ token, user: res.locals.user });
+  });
+
+  app.post('/api/auth/password-reset/request', authLimit, async (req, res) => {
+    const email = normalizeEmail(req.body?.email);
+    if (!validEmail(email)) return res.status(400).json({ error: 'Enter a valid email address.' });
+    const delivery = resetDelivery(env);
+    if (!delivery) return res.status(503).json({ error: 'Password reset is unavailable right now.' });
+
+    const token = newToken();
+    const recoveryEmail = delivery.mode === 'email' && demoEmails.includes(email) ? null : email;
+    const [, reset] = await db.batch([
+      db.prepare('DELETE FROM password_resets WHERE expires_at <= unixepoch()'),
+      db.prepare(`
+        INSERT INTO password_resets (token_hash, user_id, expires_at)
+        SELECT ?, id, unixepoch() + ? FROM users
+        WHERE email = ? AND NOT EXISTS (
+          SELECT 1 FROM password_resets WHERE user_id = users.id AND created_at > unixepoch() - 60
+        )
+        RETURNING user_id
+      `).bind(await digest(token), resetLinkMinutes * 60, recoveryEmail)
+    ]);
+    if (reset.results.length) {
+      const sent = delivery.send(email, token).catch(() => console.error('Password reset email delivery failed.'));
+      if (waitUntil && delivery.mode === 'email') waitUntil(sent);
+      else await sent;
+    }
+    res.status(202).json({ accepted: true, delivery: delivery.mode });
+  });
+
+  app.post('/api/auth/password-reset/confirm', authLimit, async (req, res) => {
+    const { token, password } = req.body ?? {};
+    if (typeof token !== 'string' || !/^[a-f0-9]{64}$/.test(token)) {
+      return res.status(400).json({ error: invalidReset });
+    }
+    if (!validNewPassword(password)) return res.status(400).json({ error: passwordLengthError });
+    const tokenHash = await digest(token);
+    const pending = await db.prepare('SELECT 1 FROM password_resets WHERE token_hash = ? AND expires_at > unixepoch()')
+      .bind(tokenHash).first();
+    if (!pending) return res.status(400).json({ error: invalidReset });
+
+    const updated = await db.prepare(`
+      UPDATE users SET password_hash = ?
+      WHERE id = (SELECT user_id FROM password_resets WHERE token_hash = ? AND expires_at > unixepoch())
+      RETURNING id
+    `).bind(await hashPassword(password), tokenHash).first();
+    if (!updated) return res.status(400).json({ error: invalidReset });
+    res.json({ reset: true });
   });
 
   app.get('/api/auth/me', authenticate, (_req, res) => res.json({ user: res.locals.user }));

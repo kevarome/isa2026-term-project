@@ -50,7 +50,7 @@ function asD1(database, controls) {
   };
 }
 
-async function withApp(t, seedLegacy) {
+async function withApp(t, seedLegacy, waitUntil) {
   const database = new DatabaseSync(':memory:');
   const controls = {};
   t.after(() => database.close());
@@ -85,7 +85,7 @@ async function withApp(t, seedLegacy) {
       }
     }
   };
-  const server = createApp(env).listen(0, '127.0.0.1');
+  const server = createApp(env, waitUntil).listen(0, '127.0.0.1');
   await new Promise((resolve, reject) => server.once('listening', resolve).once('error', reject));
   t.after(() => new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve())));
   const base = 'http://127.0.0.1:' + server.address().port + '/api';
@@ -103,6 +103,78 @@ async function withApp(t, seedLegacy) {
   }
   return { request, env, database, controls, calls: () => calls };
 }
+
+test('resets passwords with an expiring, single-use link and revokes the account sessions', async t => {
+  const { request, env, database } = await withApp(t);
+  env.PASSWORD_RESET_MODE = 'local';
+  const links = [];
+  t.mock.method(console, 'log', message => {
+    const prefix = 'Password reset link (local): ';
+    if (message.startsWith(prefix)) links.push(new URL(message.slice(prefix.length)));
+  });
+  const resetRequest = email => request('/auth/password-reset/request', { payload: { email } });
+  const resetConfirm = (token, password) => request('/auth/password-reset/confirm', { payload: { token, password } });
+  const replacement = 'updated-demo-password';
+  const unknown = await resetRequest('unknown@example.test');
+  assert.equal(unknown.status, 202);
+  assert.equal(links.length, 0);
+  const known = await resetRequest(' OWNER@example.test ');
+  assert.deepEqual(known.data, unknown.data);
+  assert.equal(links.length, 1);
+  assert.equal(links[0].origin, origin);
+  assert.equal(links[0].search, '');
+  const firstToken = links[0].hash.slice('#reset-password='.length);
+  assert.match(firstToken, /^[a-f0-9]{64}$/);
+  const stored = database.prepare('SELECT token_hash, expires_at - created_at AS lifetime FROM password_resets').get();
+  assert.equal(stored.token_hash, createHash('sha256').update(firstToken).digest('hex'));
+  assert.equal(stored.lifetime, 1800);
+  assert.deepEqual((await resetRequest(emails.owner)).data, unknown.data);
+  assert.equal(links.length, 1);
+  database.exec('UPDATE password_resets SET expires_at = unixepoch() - 1');
+  assert.equal((await resetConfirm(firstToken, replacement)).status, 400);
+
+  await resetRequest(emails.owner);
+  const freshToken = links[1].hash.slice('#reset-password='.length);
+  assert.equal((await resetConfirm(freshToken, 'too-short')).status, 400);
+  const attempts = await Promise.all([resetConfirm(freshToken, replacement), resetConfirm(freshToken, replacement)]);
+  assert.deepEqual(attempts.map(result => result.status).sort(), [200, 400]);
+  assert.equal((await request('/auth/me', { user: 'owner' })).status, 401);
+  assert.equal((await request('/auth/me', { user: 'stranger' })).status, 200);
+  assert.equal((await request('/auth/login', { payload: { email: emails.owner, password: fixturePassword } })).status, 401);
+  assert.equal((await request('/auth/login', { payload: { email: emails.owner, password: replacement } })).status, 200);
+});
+
+test('delivers hosted reset links through email and skips reserved demo accounts', async t => {
+  const background = [];
+  const { request, env, database } = await withApp(t, undefined, work => background.push(work));
+  env.CLIENT_ORIGIN = 'https://tickets.example.test';
+  env.PASSWORD_RESET_FROM = 'TicketMaestro <support@example.test>';
+  env.RESEND_API_KEY = 'test-only-token';
+  database.exec("UPDATE users SET email = 'admin@admin.com' WHERE id = 'admin'");
+
+  const sent = [];
+  const actualFetch = globalThis.fetch;
+  t.mock.method(globalThis, 'fetch', (url, options) => {
+    if (url !== 'https://api.resend.com/emails') return actualFetch(url, options);
+    sent.push({ headers: options.headers, body: JSON.parse(options.body) });
+    return Promise.resolve(Response.json({ id: 'synthetic-delivery' }));
+  });
+  const resetRequest = email => request('/auth/password-reset/request', {
+    payload: { email }, requestOrigin: env.CLIENT_ORIGIN
+  });
+  const demo = await resetRequest('admin@admin.com');
+  const registered = await resetRequest(emails.owner);
+  assert.equal(registered.status, 202);
+  assert.deepEqual(demo.data, registered.data);
+  assert.deepEqual(registered.data, { accepted: true, delivery: 'email' });
+  assert.equal(background.length, 1);
+  await Promise.all(background);
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].headers.Authorization, 'Bearer test-only-token');
+  assert.equal(sent[0].body.from, env.PASSWORD_RESET_FROM);
+  assert.deepEqual(sent[0].body.to, [emails.owner]);
+  assert.match(sent[0].body.text, /https:\/\/tickets\.example\.test\/#reset-password=[a-f0-9]{64}/);
+});
 
 test('validates requests, protects roles and never forwards invalid ticket content', async t => {
   const { request, calls, database } = await withApp(t);

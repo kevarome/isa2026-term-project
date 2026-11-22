@@ -62,7 +62,7 @@ async function main() {
     remoteBindings: false,
     persist: values['persist-to'] ? { path: join(values['persist-to'], 'v3') } : true
   });
-  const env = { ...platform.env, AI: createWorkersAi(account, getToken) };
+  const env = { ...platform.env, AI: createWorkersAi(account, getToken), PASSWORD_RESET_MODE: 'local' };
   env.AI_MODEL = modelOverride ?? env.AI_MODEL;
   const server = createApp(env).listen(port, '127.0.0.1');
   try {
