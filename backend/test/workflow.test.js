@@ -361,6 +361,76 @@ test('rejects a future version even if another writer reaches it before the upda
   assert.equal(ticket.version, version + 1);
 });
 
+test('only administrators can delete tickets and accounts, and deletions update related data', async t => {
+  const { request, database } = await withApp(t);
+  const submit = async user => {
+    const created = await request('/tickets', { user, payload: { message: samples[0].message } });
+    assert.equal(created.status, 201);
+    return created.data.ticket.id;
+  };
+  const ticket = await submit('owner');
+  const staffTicket = await submit('staff');
+  const survivingTicket = await submit('stranger');
+  const ticketPath = '/admin/tickets/' + ticket;
+  const userPath = '/admin/users/staff';
+  const remove = (path, user) => request(path, { user, method: 'DELETE' });
+  for (const path of [ticketPath, userPath]) {
+    const preflight = await request(path, { method: 'OPTIONS' });
+    assert.match(preflight.headers.get('access-control-allow-methods'), /\bDELETE\b/);
+    assert.equal((await remove(path)).status, 401);
+    assert.equal((await remove(path, 'owner')).status, 403);
+    assert.equal((await remove(path, 'staff')).status, 403);
+  }
+  assert.equal((await remove('/admin/users/admin', 'admin')).status, 409);
+
+  const removedTicket = await remove(ticketPath, 'admin');
+  assert.equal(removedTicket.status, 200);
+  assert.deepEqual(removedTicket.data, { deleted: true });
+  assert.equal((await remove(ticketPath, 'admin')).status, 404);
+  assert.equal((await request('/tickets/' + ticket, { user: 'owner' })).status, 404);
+  const customer = await request('/tickets', { user: 'owner' });
+  assert.deepEqual(customer.data.tickets, []);
+  assert.equal(customer.data.usage, 1);
+
+  database.prepare("INSERT INTO password_resets(token_hash, user_id, expires_at) VALUES ('pending', 'staff', unixepoch() + 1800)").run();
+  const removedUser = await remove(userPath, 'admin');
+  assert.equal(removedUser.status, 200);
+  assert.deepEqual(removedUser.data, { deleted: true });
+  assert.equal((await remove(userPath, 'admin')).status, 404);
+  assert.equal((await request('/auth/me', { user: 'staff' })).status, 401);
+  assert.equal((await request('/tickets/' + staffTicket, { user: 'admin' })).status, 404);
+  for (const table of ['sessions', 'password_resets', 'staff_profiles', 'api_usage', 'api_requests']) {
+    assert.equal(database.prepare(`SELECT COUNT(*) AS count FROM ${table} WHERE user_id = 'staff'`).get().count, 0);
+  }
+  assert.equal(database.prepare("SELECT COUNT(*) AS count FROM api_requests WHERE route = '/api/tickets' AND method = 'POST' AND user_id IS NULL").get().count, 1);
+  const users = await request('/admin/users', { user: 'admin' });
+  assert.equal(users.data.users.some(user => user.id === 'staff'), false);
+  assert.deepEqual(users.data.totals, { users: 3, submissions: 2 });
+  assert.equal((await request('/stats', { user: 'admin' })).data.total, 1);
+  assert.equal((await request('/tickets/' + survivingTicket, { user: 'stranger' })).status, 200);
+});
+
+test('two administrators trying to delete each other leave one active administrator', { timeout: 5000 }, async t => {
+  const { request, database, controls } = await withApp(t);
+  database.prepare("UPDATE users SET role = 'admin' WHERE id = 'stranger'").run();
+  let authenticated = 0;
+  let release;
+  const bothAuthenticated = new Promise(resolve => { release = resolve; });
+  controls.onRead = async row => {
+    if (row?.role === 'admin' && row?.email) {
+      if (++authenticated === 2) release();
+      await bothAuthenticated;
+    }
+  };
+  const responses = await Promise.all([
+    request('/admin/users/admin', { user: 'stranger', method: 'DELETE' }),
+    request('/admin/users/stranger', { user: 'admin', method: 'DELETE' })
+  ]);
+  assert.deepEqual(responses.map(result => result.status).sort(), [200, 401]);
+  assert.equal(database.prepare("SELECT COUNT(*) AS count FROM users WHERE role = 'admin'").get().count, 1);
+  assert.equal(database.prepare("SELECT COUNT(*) AS count FROM api_requests WHERE method = 'DELETE'").get().count, 2);
+});
+
 test('tracks API responses once with safe route names and restricts the report to admins', async t => {
   const { request, database } = await withApp(t);
   assert.equal((await request('/tickets', { method: 'OPTIONS' })).status, 204);

@@ -1,6 +1,6 @@
 # TicketMaestro
 
-TicketMaestro is a support portal for NorthLink Internet, a fictional Canadian internet provider. A customer submits a ticket and can follow its status. Cloudflare Clef Flash suggests a department and urgency, and the API routes a validated decision to Billing, Technical, Account, or General Support. Support staff can search queues, review uncertain results, and correct routing. Administrators can view API traffic, ticket statistics, and registered users.
+TicketMaestro is a support portal for NorthLink Internet, a fictional Canadian internet provider. A customer submits a ticket and can follow its status. Cloudflare Clef Flash suggests a department and urgency, and the API routes a validated decision to Billing, Technical, Account, or General Support. Support staff can search queues, review uncertain results, and correct routing. Administrators can view API traffic and ticket statistics, delete tickets, and remove registered users.
 
 ## Run locally
 
@@ -32,7 +32,7 @@ The seed also provides Billing, Account, and General Support logins. It can be r
 
 1. As a customer, submit a fictional outage, billing issue, sign-in problem, or plan inquiry. Open a ticket to see its ID, routing, and current status.
 2. As staff, open your department’s queue. Search by message, ticket ID, or customer email. Filter by department or status, sort by priority or date, and open a ticket to change its assignment, priority, or status. The review queue lets staff assign tickets that need a human decision.
-3. As an administrator, open **API usage** to see request volume, errors, processing time, and the most active endpoints and accounts. Change the reporting period or refresh after using the app. **Ticket queue** contains ticket statistics and staff workflows. **Registered users** lists the accounts.
+3. As an administrator, open **API usage** to see request volume, errors, processing time, and the most active endpoints and accounts. In **Ticket queue**, open a ticket to edit or delete it. In **Registered users**, remove an account and its tickets.
 
 Offline mode saves fresh submissions for manual review. Seeded examples exercise the four queues and are identified as demo tickets. For live Clef Flash classification with the same local D1 database, sign in with `npx wrangler login` and start the API with `npm run dev:ai`. This connects directly to Workers AI without a `workers.dev` subdomain. See the [live AI setup](backend/README.md#local-api-and-demo-data).
 

@@ -8,6 +8,7 @@ const resetPasswordForm = $('reset-password-form');
 const ticketForm = $('ticket-form');
 const queueForm = $('queue-form');
 const detailDialog = $('ticket-detail');
+const deleteDialog = $('confirm-delete');
 const editForm = $('edit-ticket');
 const labels = {
   billing: 'Billing', technical: 'Technical', account: 'Account',
@@ -47,6 +48,9 @@ let queueFilters = new URLSearchParams();
 let queueRequest = 0;
 let activeDetail = null;
 let saving = false;
+let adminId = null;
+let userRequest = 0;
+let deleteTarget = null;
 const usageReport = setupUsageReport(api);
 
 function node(tag, text, className) {
@@ -71,6 +75,8 @@ function show(view, admin = false) {
   document.body.classList.toggle('admin-mode', admin);
   $('admin-sidebar').hidden = !admin;
   if (!admin) {
+    adminId = null;
+    if (deleteDialog.open) deleteDialog.close();
     usageReport.clear();
     $('admin-email').textContent = '';
     $('users').replaceChildren();
@@ -219,12 +225,21 @@ async function loadCustomerTickets(cursor = null) {
 
 async function loadUsers(cursor = null) {
   const requestToken = token;
+  const request = ++userRequest;
   const data = await api('/admin/users' + (cursor ? '?after=' + encodeURIComponent(cursor) : ''));
-  if (requestToken !== token) return;
+  if (requestToken !== token || request !== userRequest || !adminId) return;
   if (!cursor) $('users').replaceChildren();
   for (const user of data.users) {
     const row = $('users').insertRow();
     for (const value of [user.email, user.role, user.created_at]) row.insertCell().textContent = value;
+    const actions = row.insertCell();
+    if (user.id !== adminId) {
+      const remove = node('button', 'Remove', 'danger-action');
+      remove.type = 'button';
+      remove.setAttribute('aria-label', `Remove ${user.email}`);
+      remove.onclick = () => confirmDeletion('users', user);
+      actions.append(remove);
+    }
   }
   $('totals').textContent = `${data.totals.users} registered`;
   nextUser = data.next;
@@ -336,6 +351,7 @@ function renderDetail(detail, ticket) {
   );
   $('detail-ai').hidden = !detail.staff;
   editForm.hidden = !detail.staff;
+  $('delete-ticket').hidden = !adminId;
   if (detail.staff) {
     $('detail-classification').textContent = classificationResult(ticket);
     editForm.elements.department.value = ticket.department ?? '';
@@ -382,6 +398,7 @@ async function openAdminPage(focusHeading = false) {
 }
 
 async function openWorkspace(user) {
+  adminId = user.role === 'admin' ? user.id : null;
   if (user.role === 'admin' || user.role === 'staff') {
     const admin = user.role === 'admin';
     $('staff-title').textContent = 'Support dashboard';
@@ -551,6 +568,63 @@ queueForm.onsubmit = event => {
   void run(() => loadQueue(selectedQueueFilters()));
 };
 
+function confirmDeletion(collection, record) {
+  if (!adminId || deleteDialog.open) return;
+  const user = collection === 'users';
+  const action = user ? 'Remove user' : 'Delete ticket';
+  deleteTarget = { collection, id: record.id, session: token };
+  $('delete-title').textContent = action + '?';
+  $('delete-confirm').textContent = action;
+  $('delete-message').textContent = user
+    ? `Permanently remove ${record.email} and all tickets submitted by this account? This also ends their sessions.`
+    : `Permanently delete ticket ${record.id}?`;
+  $('delete-error').textContent = '';
+  deleteDialog.showModal();
+}
+
+$('delete-ticket').onclick = () => {
+  if (activeDetail?.ticket && !saving) confirmDeletion('tickets', activeDetail.ticket);
+};
+
+deleteDialog.oncancel = event => {
+  if ($('delete-confirm').disabled) event.preventDefault();
+};
+deleteDialog.onclose = () => { if (!deleteDialog.open) deleteTarget = null; };
+deleteDialog.querySelector('form').onsubmit = async event => {
+  if (event.submitter !== $('delete-confirm')) return;
+  event.preventDefault();
+  const target = deleteTarget;
+  if (!target || !adminId || target.session !== token || $('delete-confirm').disabled) return;
+  $('delete-confirm').disabled = true;
+  $('delete-cancel').disabled = true;
+  $('delete-error').textContent = '';
+  const user = target.collection === 'users';
+  let message = user ? 'User removed.' : 'Ticket deleted.';
+  try {
+    await api(`/admin/${target.collection}/${encodeURIComponent(target.id)}`, undefined, 'DELETE');
+  } catch (error) {
+    if (target.session !== token) return;
+    if (error.status !== 404) {
+      $('delete-error').textContent = errorMessage(error);
+      return;
+    }
+    message = user ? 'This user was already removed.' : 'This ticket was already deleted.';
+  } finally {
+    $('delete-confirm').disabled = false;
+    $('delete-cancel').disabled = false;
+  }
+  if (target.session !== token || !adminId) return;
+  deleteDialog.close();
+  if (!user && detailDialog.open && target.id === activeDetail?.id) detailDialog.close();
+  if (user) $('staff-title').focus();
+  notify(message);
+  try {
+    await openAdminPage();
+  } catch (error) {
+    if (target.session === token) notify(`${message} ${errorMessage(error)}`, true);
+  }
+};
+
 editForm.onsubmit = async event => {
   event.preventDefault();
   const detail = activeDetail;
@@ -572,6 +646,7 @@ editForm.onsubmit = async event => {
   const isCurrent = () => activeDetail === detail && detailDialog.open;
   const requestToken = token;
   saving = true;
+  $('delete-ticket').disabled = true;
   $('edit-save').disabled = true;
   $('edit-fields').disabled = true;
   detailNotice('Saving changes…');
@@ -604,6 +679,7 @@ editForm.onsubmit = async event => {
     }
   } finally {
     saving = false;
+    $('delete-ticket').disabled = false;
     $('edit-save').disabled = false;
     $('edit-fields').disabled = false;
   }

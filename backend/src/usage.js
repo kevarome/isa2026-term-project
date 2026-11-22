@@ -17,7 +17,7 @@ export function trackUsage(db) {
         try {
           await db.prepare(`
             INSERT INTO api_requests (user_id, method, route, status_code, duration_ms)
-            VALUES (?, ?, ?, ?, ?)
+            VALUES ((SELECT id FROM users WHERE id = ?), ?, ?, ?, ?)
           `).bind(
             res.locals.user?.id ?? null,
             methods.has(req.method) ? req.method : 'OTHER',

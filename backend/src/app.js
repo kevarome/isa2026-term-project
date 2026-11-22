@@ -43,7 +43,7 @@ export function createApp(env, waitUntil) {
     if (origin) {
       res.set({
         'Access-Control-Allow-Origin': origin,
-        'Access-Control-Allow-Methods': 'GET, POST, PATCH, OPTIONS',
+        'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
         'Access-Control-Allow-Headers': 'Authorization, Content-Type'
       });
     }
@@ -209,6 +209,28 @@ export function createApp(env, waitUntil) {
     const page = users.results.slice(0, 50);
     res.json({ users: page, next: users.results.length > 50 ? page.at(-1).email : null, totals: totals.results[0] });
   });
+
+  function deleteAsAdmin(table, missingMessage) {
+    const sessionRole = `SELECT u.role FROM sessions s JOIN users u ON u.id = s.user_id
+                         WHERE s.token_hash = ? AND s.expires_at > unixepoch()`;
+    return async (req, res) => {
+      if (table === 'users' && req.params.id === res.locals.user.id) {
+        return res.status(409).json({ error: 'You cannot remove your own account.' });
+      }
+      // Check the session in the write so two admins cannot remove each other.
+      const deleted = await db.prepare(`
+        DELETE FROM ${table} WHERE id = ? AND (${sessionRole}) = 'admin' RETURNING id
+      `).bind(req.params.id, res.locals.tokenHash).first();
+      if (deleted) return res.json({ deleted: true });
+
+      const role = await db.prepare(sessionRole).bind(res.locals.tokenHash).first('role');
+      if (!role) return res.status(401).json({ error: 'Sign in to continue.' });
+      if (role !== 'admin') return res.status(403).json({ error: 'Administrator access required.' });
+      return res.status(404).json({ error: missingMessage });
+    };
+  }
+  app.delete('/api/admin/users/:id', authenticate, requireAdmin, deleteAsAdmin('users', 'User not found.'));
+  app.delete('/api/admin/tickets/:id', authenticate, requireAdmin, deleteAsAdmin('tickets', 'Ticket not found.'));
 
   app.use((_req, res) => res.status(404).json({ error: 'Endpoint not found.' }));
   app.use((error, _req, res, _next) => {

@@ -210,7 +210,7 @@
       <section id="admin-users" class="card staff-section" hidden>
         <p id="totals" class="muted" role="status"></p>
         <div class="table-wrap"><table>
-          <thead><tr><th scope="col">Email</th><th scope="col">Role</th><th scope="col">Registered (UTC)</th></tr></thead>
+          <thead><tr><th scope="col">Email</th><th scope="col">Role</th><th scope="col">Registered (UTC)</th><th scope="col">Actions</th></tr></thead>
           <tbody id="users"></tbody>
         </table></div>
         <button id="more-users" type="button" class="link" hidden>Load more users</button>
@@ -262,9 +262,21 @@
               </select>
             </label>
           </fieldset>
-          <button id="edit-save" type="submit">Save changes</button>
+          <div class="ticket-edit-actions">
+            <button id="edit-save" type="submit">Save changes</button>
+            <button id="delete-ticket" class="danger-action" type="button" hidden>Delete ticket</button>
+          </div>
         </form>
       </div>
+    </dialog>
+    <dialog id="confirm-delete" aria-labelledby="delete-title" aria-describedby="delete-message">
+      <h2 id="delete-title"></h2>
+      <p id="delete-message"></p>
+      <p id="delete-error" role="alert"></p>
+      <form method="dialog" class="confirm-actions">
+        <button id="delete-cancel" type="submit" value="cancel" class="secondary" autofocus>Cancel</button>
+        <button id="delete-confirm" type="submit" value="delete" class="danger-confirm"></button>
+      </form>
     </dialog>
   </main>
 </body>

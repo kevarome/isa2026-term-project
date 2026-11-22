@@ -18,6 +18,20 @@
 .admin-mode header button { background: transparent; color: white; border: 1px solid #73968d; padding: .3rem .8rem; font-size: .85rem; }
 .admin-mode main { max-width: none; padding: 0; }
 .admin-mode #notice { margin: 0; border-radius: 0; }
+.danger-action {
+  border: 1px solid #b15f50; color: #8b392b; background: white;
+  padding: .4rem .7rem; white-space: nowrap;
+}
+.danger-action:hover { background: #fff1ec; }
+.ticket-edit-actions, .confirm-actions { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; }
+.ticket-edit-actions { justify-content: space-between; }
+.confirm-actions { justify-content: flex-end; }
+.danger-confirm { background: #923d30; }
+.danger-confirm:hover { background: #773025; }
+#confirm-delete { max-width: min(28rem, calc(100% - 2rem)); }
+#delete-message { overflow-wrap: anywhere; }
+#delete-error { color: #822a17; }
+#delete-error:empty { display: none; }
 .admin-mode #staff { display: grid; grid-template-columns: 13.5rem minmax(0, 1fr); min-height: calc(100vh - 3.5rem); }
 #admin-sidebar {
   display: flex; flex-direction: column; gap: 1.8rem; background: #fbfcfb;
