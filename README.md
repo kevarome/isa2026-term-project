@@ -2,6 +2,8 @@
 
 TicketMaestro is a support portal for NorthLink Internet, a fictional Canadian internet provider. A customer submits a ticket and can follow its status. Cloudflare Clef Flash suggests a department and urgency, and the API routes a validated decision to Billing, Technical, Account, or General Support. Support staff can search queues, review uncertain results, and correct routing. Administrators can view API traffic and ticket statistics, delete tickets, and remove registered users.
 
+For development and testing, the project uses Cloudflare Clef Flash. For the final milestone, classification will use TypeSafe Jev (`typesafe/jev`) instead.
+
 ## Run locally
 
 Use Node.js 22.14 or newer. From `backend`, install dependencies, migrate the local D1 database, and seed the synthetic demonstration accounts and tickets.
