@@ -38,6 +38,8 @@ Offline mode saves fresh submissions for manual review. Seeded examples exercise
 
 ## Architecture
 
+The Express app creates an `AuthController`, `TicketController`, and `AdminController` to handle their respective routes. A `Ticket` builds the response for each role and applies staff edits. A `TicketClassifier` calls the configured AI model and decides whether a submission needs manual review. In the browser, `ApiClient` owns the sign-in session and sends authenticated requests for the workspaces.
+
 ```mermaid
 flowchart LR
   Client["Customer, staff, administrator<br/>Cloudflare Static Assets Worker"]
