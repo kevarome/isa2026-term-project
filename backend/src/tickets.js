@@ -1,34 +1,12 @@
-import { classify, clefModel, departments, urgencyLevels } from './classifier.js';
+import { Ticket } from './ticket.js';
+import { TicketClassifier, clefModel, departments, urgencyLevels } from './classifier.js';
 
 const statuses = ['manual_review', 'open', 'in_progress', 'resolved', 'closed'];
-const priorityRank = { low: 1, medium: 2, high: 3 };
 const priorityOrder = "CASE t.urgency WHEN 'high' THEN 3 WHEN 'medium' THEN 2 WHEN 'low' THEN 1 ELSE 0 END";
 const pageSize = 30;
 
-function represent(record, staff = false) {
-  const { id, message, department, urgency, confidence, status, created_at, updated_at } = record;
-  const ticket = { id, message, department, urgency, priority: urgency, confidence, status, created_at, updated_at };
-  if (staff) {
-    Object.assign(ticket, {
-      email: record.email,
-      version: record.version,
-      classification_outcome: record.classification_outcome,
-      classification_model: record.classification_model,
-      classification_department: record.suggested_department,
-      classification_urgency: record.suggested_urgency,
-      jev_department: record.suggested_department,
-      jev_urgency: record.suggested_urgency
-    });
-  }
-  return ticket;
-}
-
-function pageKey(ticket, sort) {
-  return sort === 'priority'
-    ? [priorityRank[ticket.urgency] ?? 0, ticket.created_at, ticket.id]
-    : [ticket.created_at, ticket.id];
-}
-
+// Decode a base64url ticket cursor and check its sort mode, shape, and field values.
+// Return null for malformed or incompatible cursors before they reach the database query.
 function decodeCursor(cursor, sort) {
   if (!/^[A-Za-z0-9_-]{1,512}$/.test(cursor)) return null;
   try {
@@ -48,21 +26,41 @@ function decodeCursor(cursor, sort) {
   }
 }
 
+// Identify roles that can read the support queues and edit tickets across customer accounts.
 function supportRole(user) {
   return user.role === 'staff' || user.role === 'admin';
 }
 
-export function registerTicketRoutes(app, env, authenticate, requireAdmin) {
-  const db = env.DB;
+// Coordinate the authenticated ticket endpoints with the D1 store, AI provider, and submission limit.
+export class TicketController {
+  // Keep the database connection and Worker bindings used by this application's requests.
+  constructor(env) {
+    this.db = env.DB;
+    this.env = env;
+  }
 
-  function requireSupport(_req, res, next) {
+  // Mount the endpoints with their access checks and bind handlers to this controller.
+  registerRoutes(app, authenticate, requireAdmin) {
+    const list = this.listTickets.bind(this);
+    app.get('/api/tickets', authenticate, list);
+    app.get('/api/admin/tickets', authenticate, requireAdmin, list);
+    app.post('/api/tickets', authenticate, this.createTicket.bind(this));
+    app.get('/api/tickets/:id', authenticate, this.getTicket.bind(this));
+    app.patch('/api/tickets/:id', authenticate, this.requireSupport, this.updateTicket.bind(this));
+    app.get('/api/stats', authenticate, this.requireSupport, this.getStats.bind(this));
+  }
+
+  // Require a staff or administrator role after authentication and return 403 for other callers.
+  requireSupport(_req, res, next) {
     if (!supportRole(res.locals.user)) {
       return res.status(403).json({ error: 'Support staff access required.' });
     }
     next();
   }
 
-  async function listTickets(req, res) {
+  // Return a filtered page of tickets visible to the caller and a cursor when more results exist.
+  // Customers get their own tickets and submission count. The legacy admin route uses an ID cursor.
+  async listTickets(req, res) {
     const user = res.locals.user;
     const staff = supportRole(user);
     const legacy = req.path === '/api/admin/tickets';
@@ -99,9 +97,9 @@ export function registerTicketRoutes(app, env, authenticate, requireAdmin) {
     const orderColumns = sort === 'priority' ? [priorityOrder, 't.created_at', 't.id'] : ['t.created_at', 't.id'];
     if (after) {
       if (legacy) {
-        const earlier = await db.prepare('SELECT * FROM tickets WHERE id = ?').bind(after).first();
+        const earlier = await this.db.prepare('SELECT * FROM tickets WHERE id = ?').bind(after).first();
         if (!earlier) return res.json({ tickets: [], next: null });
-        values.push(...pageKey(earlier, sort));
+        values.push(...new Ticket(earlier).pageKey(sort));
       } else {
         const key = decodeCursor(after, sort);
         if (!key) return res.status(400).json({ error: 'Invalid ticket page cursor.' });
@@ -109,7 +107,7 @@ export function registerTicketRoutes(app, env, authenticate, requireAdmin) {
       }
       filters.push(`(${orderColumns.join(', ')}) < (${orderColumns.map(() => '?').join(', ')})`);
     }
-    const query = db.prepare(`
+    const query = this.db.prepare(`
       SELECT t.*${staff ? ', u.email' : ''}
       FROM tickets t
       ${staff ? 'JOIN users u ON u.id = t.user_id' : ''}
@@ -119,38 +117,37 @@ export function registerTicketRoutes(app, env, authenticate, requireAdmin) {
     `).bind(...values, pageSize + 1);
     const [result, usage] = staff
       ? [await query.all()]
-      : await db.batch([
+      : await this.db.batch([
           query,
-          db.prepare('SELECT COUNT(*) AS count FROM api_usage WHERE user_id = ?').bind(user.id)
+          this.db.prepare('SELECT COUNT(*) AS count FROM api_usage WHERE user_id = ?').bind(user.id)
         ]);
-    const page = result.results.slice(0, pageSize);
+    const page = result.results.slice(0, pageSize).map(record => new Ticket(record));
     let next = null;
     if (result.results.length > pageSize) {
-      const last = page.at(-1);
-      next = legacy ? last.id : Buffer.from(JSON.stringify([sort, ...pageKey(last, sort)])).toString('base64url');
+      next = page.at(-1).nextCursor(sort, legacy);
     }
-    const response = { tickets: page.map(ticket => represent(ticket, staff)), next };
+    const response = { tickets: page.map(ticket => ticket.toResponse(staff)), next };
     if (usage) response.usage = usage.results[0].count;
     res.json(response);
   }
 
-  app.get('/api/tickets', authenticate, listTickets);
-  app.get('/api/admin/tickets', authenticate, requireAdmin, listTickets);
-
-  app.post('/api/tickets', authenticate, async (req, res) => {
+  // Validate the message, apply the per-user submission limit, and classify the ticket when AI is available.
+  // Save the ticket and its submission usage together, keeping the original AI result for staff review.
+  async createTicket(req, res) {
     const userId = res.locals.user.id;
     const message = typeof req.body?.message === 'string' ? req.body.message.trim() : '';
     if (message.length < 10 || message.length > 2000) {
       return res.status(400).json({ error: 'Describe the issue in 10 to 2,000 characters.' });
     }
-    if (!(await env.TICKET_LIMIT.limit({ key: userId })).success) {
+    if (!(await this.env.TICKET_LIMIT.limit({ key: userId })).success) {
       return res.status(429).json({ error: 'Ticket limit reached. Try again in a minute.' });
     }
-    const ai = env.AI_MODE === 'offline' ? undefined : env.AI;
-    const model = env.AI_MODEL || clefModel;
-    const result = await classify(ai, message, model);
-    const [insert] = await db.batch([
-      db.prepare(`
+    const ai = this.env.AI_MODE === 'offline' ? undefined : this.env.AI;
+    const model = this.env.AI_MODEL || clefModel;
+    const classifier = new TicketClassifier(ai, model);
+    const result = await classifier.classify(message);
+    const [insert] = await this.db.batch([
+      this.db.prepare(`
         INSERT INTO tickets (
           id, user_id, message, department, urgency, confidence, status,
           classification_outcome, suggested_department, suggested_urgency, classification_model
@@ -161,25 +158,29 @@ export function registerTicketRoutes(app, env, authenticate, requireAdmin) {
         result.status, result.outcome, result.suggestion?.department ?? null,
         result.suggestion?.urgency ?? null, ai ? model : null
       ),
-      db.prepare("INSERT INTO api_usage (user_id, endpoint, outcome) VALUES (?, 'POST /api/tickets', ?)")
+      this.db.prepare("INSERT INTO api_usage (user_id, endpoint, outcome) VALUES (?, 'POST /api/tickets', ?)")
         .bind(userId, result.outcome)
     ]);
-    res.status(201).json({ ticket: represent(insert.results[0]) });
-  });
+    res.status(201).json({ ticket: new Ticket(insert.results[0]).toResponse() });
+  }
 
-  app.get('/api/tickets/:id', authenticate, async (req, res) => {
+  // Fetch a single ticket for its owner or a support user.
+  // Return the same 404 for missing tickets and tickets outside the customer's account.
+  async getTicket(req, res) {
     const user = res.locals.user;
     const staff = supportRole(user);
     const record = staff
-      ? await db.prepare('SELECT t.*, u.email FROM tickets t JOIN users u ON u.id = t.user_id WHERE t.id = ?')
+      ? await this.db.prepare('SELECT t.*, u.email FROM tickets t JOIN users u ON u.id = t.user_id WHERE t.id = ?')
         .bind(req.params.id).first()
-      : await db.prepare('SELECT * FROM tickets WHERE id = ? AND user_id = ?')
+      : await this.db.prepare('SELECT * FROM tickets WHERE id = ? AND user_id = ?')
         .bind(req.params.id, user.id).first();
     if (!record) return res.status(404).json({ error: 'Ticket not found.' });
-    res.json({ ticket: represent(record, staff) });
-  });
+    res.json({ ticket: new Ticket(record).toResponse(staff) });
+  }
 
-  app.patch('/api/tickets/:id', authenticate, requireSupport, async (req, res) => {
+  // Apply a support user's changes to assignment, priority, or status. Omitted fields keep their values.
+  // Check the stored version during the write to detect concurrent edits and preserve the original AI result.
+  async updateTicket(req, res) {
     const changes = req.body;
     const editable = ['department', 'priority', 'status'];
     if (!changes || Array.isArray(changes) ||
@@ -196,28 +197,28 @@ export function registerTicketRoutes(app, env, authenticate, requireAdmin) {
         (version !== undefined && (!Number.isSafeInteger(version) || version < 1))) {
       return res.status(400).json({ error: 'Invalid department, priority, status, or version.' });
     }
-    const record = await db.prepare('SELECT t.*, u.email FROM tickets t JOIN users u ON u.id = t.user_id WHERE t.id = ?')
+    const record = await this.db.prepare('SELECT t.*, u.email FROM tickets t JOIN users u ON u.id = t.user_id WHERE t.id = ?')
       .bind(req.params.id).first();
     if (!record) return res.status(404).json({ error: 'Ticket not found.' });
     if (version !== undefined && version !== record.version) {
       return res.status(409).json({ error: 'This ticket changed. Reload it before saving again.' });
     }
-    const nextDepartment = department === undefined ? record.department : department;
-    const nextPriority = priority === undefined ? record.urgency : priority;
-    const nextStatus = status ?? (record.status === 'manual_review' && department ? 'open' : record.status);
-    const updated = await db.prepare(`
+    const next = new Ticket(record).routingAfter(changes);
+    const updated = await this.db.prepare(`
       UPDATE tickets
       SET department = ?, urgency = ?, status = ?, updated_at = strftime('%Y-%m-%d %H:%M:%f','now'),
           version = version + 1
       WHERE id = ? AND version = ?
       RETURNING *
-    `).bind(nextDepartment, nextPriority, nextStatus, record.id, record.version).first();
+    `).bind(next.department, next.priority, next.status, record.id, record.version).first();
     if (!updated) return res.status(409).json({ error: 'This ticket changed. Reload it before saving again.' });
-    res.json({ ticket: represent({ ...updated, email: record.email }, true) });
-  });
+    res.json({ ticket: new Ticket({ ...updated, email: record.email }).toResponse(true) });
+  }
 
-  app.get('/api/stats', authenticate, requireSupport, async (_req, res) => {
-    const { results } = await db.prepare(`
+  // Count tickets by original AI category, current department, status, and priority.
+  // Initialize empty categories to zero so the client receives a consistent response.
+  async getStats(_req, res) {
+    const { results } = await this.db.prepare(`
       SELECT suggested_department AS category, department, status, urgency, COUNT(*) AS count
       FROM tickets
       GROUP BY suggested_department, department, status, urgency
@@ -235,5 +236,10 @@ export function registerTicketRoutes(app, env, authenticate, requireAdmin) {
       stats.byPriority[urgency ?? 'unprioritized'] += count;
     }
     res.json(stats);
-  });
+  }
+}
+
+// Register tickets for existing application factories that supply the Worker bindings directly.
+export function registerTicketRoutes(app, env, authenticate, requireAdmin) {
+  new TicketController(env).registerRoutes(app, authenticate, requireAdmin);
 }
