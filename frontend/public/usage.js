@@ -1,11 +1,15 @@
+// Render the admin usage report with UTC dates so every browser shows the same reporting period.
 const $ = id => document.getElementById(id);
 const number = new Intl.NumberFormat();
 const percentage = new Intl.NumberFormat(undefined, { style: 'percent', maximumFractionDigits: 1 });
 const shortDate = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' });
 const fullDate = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+// Interpret the API?s calendar date at UTC midnight before formatting it.
 const date = value => new Date(value + 'T00:00:00Z');
+// Format a count with the matching singular or plural label.
 const plural = (value, term) => number.format(value) + ' ' + term + (value === 1 ? '' : 's');
 
+// Create a span with plain text and an optional class for its visual role.
 function textSpan(value, className) {
   const span = document.createElement('span');
   span.textContent = value;
@@ -13,6 +17,8 @@ function textSpan(value, className) {
   return span;
 }
 
+// Draw one stacked bar per UTC day, with successful and failed requests sharing a scale. Show the empty
+// state when the period has no requests.
 function renderChart(days) {
   const peak = Math.max(...days.map(day => day.requests));
   $('chart-empty').hidden = peak > 0;
@@ -37,6 +43,7 @@ function renderChart(days) {
   }));
 
   const descriptions = days.map(day => fullDate.format(date(day.date)) + ' · ' + plural(day.requests, 'request') + ' · ' + plural(day.errors, 'error'));
+  // Give the selected bar the chart?s single tab stop and update the text summary for that day.
   function select(index) {
     const previous = bars.querySelector('[tabindex="0"]');
     if (previous) previous.tabIndex = -1;
@@ -57,6 +64,7 @@ function renderChart(days) {
     button.onfocus = button.onclick = () => select(index);
     button.onpointerenter = () => { $('chart-detail').textContent = descriptions[index]; };
     button.onpointerleave = () => { $('chart-detail').textContent = bars.querySelector('[tabindex="0"]').getAttribute('aria-label'); };
+    // Use the arrow, Home, and End keys to navigate within the chart.
     button.onkeydown = event => {
       const destinations = { ArrowLeft: Math.max(0, index - 1), ArrowRight: Math.min(days.length - 1, index + 1), Home: 0, End: days.length - 1 };
       if (!Object.hasOwn(destinations, event.key)) return;
@@ -68,6 +76,8 @@ function renderChart(days) {
   select(days.length - 1);
 }
 
+// Replace a usage table?s rows. Use the caller?s label renderer for the first cell and format the
+// request and error counts consistently.
 function renderTable(body, data, label, emptyMessage) {
   body.replaceChildren();
   if (data.length === 0) {
@@ -84,6 +94,7 @@ function renderTable(body, data, label, emptyMessage) {
   }
 }
 
+// Populate the totals, traffic chart, endpoint table, and identified callers from one API response.
 function render(report) {
   const { from, to, summary, daily, endpoints, users } = report;
   $('usage-dates').textContent = fullDate.formatRange(date(from), date(to)) + ' · UTC';
@@ -94,6 +105,8 @@ function render(report) {
   $('metric-users').textContent = number.format(summary.activeUsers);
   renderChart(daily);
   const more = $('expand-endpoints');
+  // Switch between the first five endpoints and the full list while keeping the accessible expanded
+  // state in sync.
   function showEndpoints(expanded) {
     renderTable($('usage-endpoints'), expanded ? endpoints : endpoints.slice(0, 5),
       entry => [textSpan(entry.method, 'method'), textSpan(entry.route, 'route')], 'No endpoint activity.');
@@ -106,42 +119,54 @@ function render(report) {
   renderTable($('usage-callers'), users, entry => [entry.email], 'No identified callers in this period.');
 }
 
-export function setupUsageReport(api) {
-  let revision = 0;
-  const period = $('usage-period');
-  const state = $('report-state');
-  const refresh = $('usage-refresh');
-  function clear() {
-    revision++;
+// Owns the active report and ignores responses from a previous page or reporting period.
+export class UsageReport {
+  #client;
+  #revision = 0;
+  #period = $('usage-period');
+  #state = $('report-state');
+  #refresh = $('usage-refresh');
+
+  // Connect the shared API client and reload the report when the controls change or the admin requests
+  // a refresh.
+  constructor(client) {
+    this.#client = client;
+    this.#refresh.onclick = this.#period.onchange = () => void this.load();
+  }
+
+  // Invalidate pending loads and clear the previous report and its controls when moving between pages
+  // or periods.
+  clear() {
+    this.#revision++;
     $('usage-data').hidden = true;
     for (const id of ['usage-dates', 'metric-requests', 'metric-error-rate', 'metric-errors', 'metric-duration',
       'metric-users', 'chart-scale', 'chart-bars', 'chart-dates', 'chart-detail', 'usage-endpoints', 'usage-callers']) {
       $(id).replaceChildren();
     }
     $('expand-endpoints').onclick = null;
-    state.textContent = '';
-    state.classList.remove('error');
-    refresh.disabled = false;
+    this.#state.textContent = '';
+    this.#state.classList.remove('error');
+    this.#refresh.disabled = false;
   }
-  async function load() {
-    clear();
-    const current = revision;
-    state.textContent = 'Loading API usage…';
-    refresh.disabled = true;
+  // Fetch the selected reporting period. Only the current load can render data, report an error, or
+  // re-enable the refresh control.
+  async load() {
+    this.clear();
+    const current = this.#revision;
+    this.#state.textContent = 'Loading API usage…';
+    this.#refresh.disabled = true;
     try {
-      const report = await api('/admin/usage?days=' + period.value);
-      if (current !== revision) return;
+      const report = await this.#client.request('/admin/usage?days=' + this.#period.value);
+      if (current !== this.#revision) return;
       render(report);
       $('usage-data').hidden = false;
-      state.textContent = '';
+      this.#state.textContent = '';
     } catch (error) {
-      if (current !== revision) return;
-      state.textContent = 'Could not load API usage. ' + (error instanceof TypeError ? 'Check your connection and refresh.' : error.message);
-      state.classList.add('error');
+      if (current !== this.#revision) return;
+      this.#state.textContent = 'Could not load API usage. ' + (error instanceof TypeError ? 'Check your connection and refresh.' : error.message);
+      this.#state.classList.add('error');
     } finally {
-      if (current === revision) refresh.disabled = false;
+      if (current === this.#revision) this.#refresh.disabled = false;
     }
   }
-  refresh.onclick = period.onchange = () => void load();
-  return { load, clear };
 }

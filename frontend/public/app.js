@@ -1,5 +1,9 @@
+// The browser entry point connects the HTML controls to the API and opens the workspace for the
+// signed-in role.
 import { API_ORIGIN } from './config.js';
-import { setupUsageReport } from './usage.js';
+import { ApiClient } from './api-client.js';
+import { CustomerTicketList } from './customer-ticket-list.js';
+import { UsageReport } from './usage.js';
 
 const $ = id => document.getElementById(id);
 const accessForm = $('access-form');
@@ -10,6 +14,7 @@ const queueForm = $('queue-form');
 const detailDialog = $('ticket-detail');
 const deleteDialog = $('confirm-delete');
 const editForm = $('edit-ticket');
+// Translate API identifiers into the names displayed in the forms, queues, and statistics.
 const labels = {
   billing: 'Billing', technical: 'Technical', account: 'Account',
   general: 'General Support', low: 'Low', medium: 'Medium', high: 'High',
@@ -37,13 +42,11 @@ const examples = {
   plan: 'Which residential plans are available for a household that streams video on two devices?'
 };
 const percent = new Intl.NumberFormat(undefined, { style: 'percent', maximumFractionDigits: 1 });
-let token = sessionStorage.getItem('ticketmaestro-token');
+// Keep the current form, page cursors, and pending dialog actions in memory for this tab.
 let accessMode = 'login';
 let resetToken = null;
 let nextUser = null;
-let nextCustomerTicket = null;
 let nextQueueTicket = null;
-let customerRequest = 0;
 let queueFilters = new URLSearchParams();
 let queueRequest = 0;
 let activeDetail = null;
@@ -51,8 +54,12 @@ let saving = false;
 let adminId = null;
 let userRequest = 0;
 let deleteTarget = null;
-const usageReport = setupUsageReport(api);
+const client = new ApiClient(API_ORIGIN, () => show('access'));
+const usageReport = new UsageReport(client);
+const customerTickets = new CustomerTicketList(client, ticket => ticketRow(ticket, false));
 
+// Build an element and insert supplied text with textContent, which treats messages and names as plain
+// text.
 function node(tag, text, className) {
   const element = document.createElement(tag);
   if (text !== undefined) element.textContent = text;
@@ -60,16 +67,21 @@ function node(tag, text, className) {
   return element;
 }
 
+// Set or clear the page-wide status banner and apply its error styling when needed.
 function notify(message = '', error = false) {
   $('notice').textContent = message;
   $('notice').classList.toggle('error', error);
 }
 
+// Show feedback inside the ticket dialog so someone editing a ticket can see the result without closing
+// it.
 function detailNotice(message = '', error = false) {
   $('detail-notice').textContent = message;
   $('detail-notice').classList.toggle('error', error);
 }
 
+// Switch between the access, customer, and support views. Clear administrator data and close its delete
+// dialog when leaving admin mode.
 function show(view, admin = false) {
   for (const id of ['access', 'customer', 'staff']) $(id).hidden = id !== view;
   document.body.classList.toggle('admin-mode', admin);
@@ -86,43 +98,21 @@ function show(view, admin = false) {
   if (view === 'access' && detailDialog.open) detailDialog.close();
 }
 
-function saveToken(value) {
-  token = value;
-  if (value) sessionStorage.setItem('ticketmaestro-token', value);
-  else sessionStorage.removeItem('ticketmaestro-token');
-}
-
-async function api(path, body, method = body === undefined ? 'GET' : 'POST') {
-  const headers = {};
-  const requestToken = token;
-  if (requestToken) headers.Authorization = 'Bearer ' + requestToken;
-  if (body !== undefined) headers['Content-Type'] = 'application/json';
-  const response = await fetch(API_ORIGIN + '/api' + path, {
-    method,
-    headers,
-    body: body === undefined ? undefined : JSON.stringify(body)
-  });
-  if (response.status === 401 && requestToken && requestToken === token) {
-    saveToken(null);
-    show('access');
-  }
-  const result = await response.json().catch(() => null);
-  if (!response.ok || !result) {
-    throw Object.assign(new Error(result?.error || 'Request failed. Try again.'), { status: response.status });
-  }
-  return result;
-}
-
+// Give network failures a friendly message and display the API error message for other failures.
 function errorMessage(error) {
   return error instanceof TypeError ? 'Could not reach the API. Try again.' : error.message;
 }
 
+// Use aria-controls to find the input and keep the button text and accessible label in sync with
+// visibility.
 function setPasswordVisible(button, visible) {
   $(button.getAttribute('aria-controls')).type = visible ? 'text' : 'password';
   button.textContent = visible ? 'Hide' : 'Show';
   button.setAttribute('aria-label', `${button.textContent} ${button.dataset.passwordToggle}`);
 }
 
+// Show the form for the selected authentication step. Reset password fields and visibility, and set the
+// password requirement and autocomplete hint for sign-in or registration.
 function setAccessMode(mode) {
   accessMode = mode;
   const registering = mode === 'register';
@@ -146,6 +136,8 @@ function setAccessMode(mode) {
   if (mode !== 'reset') resetToken = null;
 }
 
+// Consume the reset token from the fragment and immediately remove it from the address bar. Return true
+// when the fragment was handled, including when its format was invalid.
 function openResetLink() {
   const prefix = '#reset-password=';
   if (!location.hash.startsWith(prefix)) return false;
@@ -165,10 +157,14 @@ function openResetLink() {
   return true;
 }
 
+// Read the current priority field, falling back to urgency for older responses. An explicit null still
+// means unprioritized.
 function ticketPriority(ticket) {
   return ticket.priority === undefined ? ticket.urgency : ticket.priority;
 }
 
+// Render one clickable ticket with its assignment, status, preview, and ID. The support queue also
+// shows original AI information.
 function ticketRow(ticket, staff) {
   const row = node('li', undefined, 'ticket-row');
   const button = node('button', undefined, 'ticket-link');
@@ -192,42 +188,13 @@ function ticketRow(ticket, staff) {
   return row;
 }
 
-async function loadCustomerTickets(cursor = null) {
-  const request = ++customerRequest;
-  const requestToken = token;
-  const isCurrent = () => request === customerRequest && requestToken === token;
-  $('usage').textContent = 'Loading tickets…';
-  $('refresh-customer-tickets').disabled = true;
-  $('more-customer-tickets').disabled = true;
-  try {
-    const { tickets, usage, next } = await api('/tickets' + (cursor ? '?after=' + encodeURIComponent(cursor) : ''));
-    if (!isCurrent()) return;
-    const list = $('tickets');
-    if (!cursor) list.replaceChildren();
-    list.append(...tickets.map(ticket => ticketRow(ticket, false)));
-    $('usage').textContent = list.childElementCount || usage
-      ? `${usage} ticket submission${usage === 1 ? '' : 's'}`
-      : 'No tickets yet.';
-    nextCustomerTicket = next;
-    $('more-customer-tickets').hidden = !next;
-  } catch (error) {
-    if (isCurrent()) {
-      $('usage').textContent = 'Could not load your tickets.';
-      throw error;
-    }
-  } finally {
-    if (request === customerRequest) {
-      $('refresh-customer-tickets').disabled = false;
-      $('more-customer-tickets').disabled = false;
-    }
-  }
-}
-
+// Fetch one page of registered accounts. Ignore responses from replaced sessions or newer requests, and
+// keep the signed-in admin out of the removal controls.
 async function loadUsers(cursor = null) {
-  const requestToken = token;
+  const requestToken = client.token;
   const request = ++userRequest;
-  const data = await api('/admin/users' + (cursor ? '?after=' + encodeURIComponent(cursor) : ''));
-  if (requestToken !== token || request !== userRequest || !adminId) return;
+  const data = await client.request('/admin/users' + (cursor ? '?after=' + encodeURIComponent(cursor) : ''));
+  if (requestToken !== client.token || request !== userRequest || !adminId) return;
   if (!cursor) $('users').replaceChildren();
   for (const user of data.users) {
     const row = $('users').insertRow();
@@ -246,6 +213,8 @@ async function loadUsers(cursor = null) {
   $('more-users').hidden = !nextUser;
 }
 
+// Build a query string from the filter form. Trim text and omit blank filters while keeping the
+// selected sort.
 function selectedQueueFilters() {
   const filters = new URLSearchParams(new FormData(queueForm));
   for (const key of ['q', 'department', 'status']) {
@@ -256,17 +225,19 @@ function selectedQueueFilters() {
   return filters;
 }
 
+// Fetch tickets using the selected filters and append a page when a cursor is supplied. Only the latest
+// request for the current session can replace the list.
 async function loadQueue(filters = queueFilters, cursor = null) {
   const query = new URLSearchParams(filters);
   if (cursor) query.set('after', cursor);
   const request = ++queueRequest;
-  const requestToken = token;
-  const isCurrent = () => request === queueRequest && requestToken === token;
+  const requestToken = client.token;
+  const isCurrent = () => request === queueRequest && requestToken === client.token;
   $('queue-state').textContent = 'Loading tickets…';
   $('apply-filters').disabled = true;
   $('more-tickets').disabled = true;
   try {
-    const { tickets, next } = await api('/tickets?' + query);
+    const { tickets, next } = await client.request('/tickets?' + query);
     if (!isCurrent()) return;
     const list = $('queue-tickets');
     if (!cursor) list.replaceChildren();
@@ -290,17 +261,20 @@ async function loadQueue(filters = queueFilters, cursor = null) {
   }
 }
 
+// Build a term and description pair for the ticket summary or dashboard statistics.
 function labeledValue(term, value) {
   const entry = node('div');
   entry.append(node('dt', term), node('dd', value));
   return entry;
 }
 
+// Fetch the counts for the support dashboard and render each grouping. Only update the dashboard for
+// the session that started the request.
 async function loadStats() {
-  const requestToken = token;
+  const requestToken = client.token;
   try {
-    const stats = await api('/stats');
-    if (requestToken !== token) return;
+    const stats = await client.request('/stats');
+    if (requestToken !== client.token) return;
     $('stats-total').textContent = `${stats.total} ticket${stats.total === 1 ? '' : 's'}`;
     const groups = [
       ['Assigned department', stats.byDepartment],
@@ -316,11 +290,13 @@ async function loadStats() {
       return group;
     }));
   } catch (error) {
-    if (requestToken === token) $('stats-total').textContent = 'Statistics unavailable';
+    if (requestToken === client.token) $('stats-total').textContent = 'Statistics unavailable';
     throw error;
   }
 }
 
+// Format the original AI suggestion, confidence, and review reason for staff. Support older field names
+// for the suggested department and urgency.
 function classificationResult(ticket) {
   const result = [];
   const model = ticket.classification_model;
@@ -336,6 +312,8 @@ function classificationResult(ticket) {
   return result.join(' · ') || 'This ticket has no saved AI classification.';
 }
 
+// Render the current ticket and keep its latest version for editing. Fill in the routing form and
+// original AI result for support users.
 function renderDetail(detail, ticket) {
   detail.ticket = ticket;
   $('detail-id').textContent = ticket.id;
@@ -361,6 +339,8 @@ function renderDetail(detail, ticket) {
   $('detail-content').hidden = false;
 }
 
+// Open the dialog before fetching the ticket. Only render a result if the same dialog request is still
+// active.
 async function openTicket(id, staff) {
   const detail = { id, staff, ticket: null };
   activeDetail = detail;
@@ -368,7 +348,7 @@ async function openTicket(id, staff) {
   detailNotice('Loading ticket…');
   detailDialog.showModal();
   try {
-    const { ticket } = await api('/tickets/' + encodeURIComponent(id));
+    const { ticket } = await client.request('/tickets/' + encodeURIComponent(id));
     if (activeDetail !== detail || !detailDialog.open) return;
     renderDetail(detail, ticket);
     detailNotice();
@@ -377,6 +357,8 @@ async function openTicket(id, staff) {
   }
 }
 
+// Select the admin section from the URL fragment, highlight its navigation link, and load the
+// corresponding data. Move focus to the heading after navigation when requested.
 async function openAdminPage(focusHeading = false) {
   if (!document.body.classList.contains('admin-mode')) return;
   const pages = { 'api-usage': 'API usage', 'ticket-queue': 'Ticket queue', 'registered-users': 'Registered users' };
@@ -397,6 +379,8 @@ async function openAdminPage(focusHeading = false) {
   await Promise.all([loadQueue(selectedQueueFilters()), loadStats()]);
 }
 
+// Initialize the signed-in view from the returned user role. Staff start with their department
+// selected, admins open their selected page, and customers load their history.
 async function openWorkspace(user) {
   adminId = user.role === 'admin' ? user.id : null;
   if (user.role === 'admin' || user.role === 'staff') {
@@ -424,14 +408,14 @@ async function openWorkspace(user) {
     else await Promise.all([loadQueue(selectedQueueFilters()), loadStats()]);
   } else {
     $('customer-email').textContent = user.email;
-    $('tickets').replaceChildren();
-    $('usage').textContent = 'Loading tickets…';
-    $('more-customer-tickets').hidden = true;
+    customerTickets.clear();
     show('customer');
-    await loadCustomerTickets();
+    await customerTickets.load();
   }
 }
 
+// Run a UI action with shared error feedback. If a button is supplied, disable it until the action
+// finishes.
 async function run(task, button) {
   if (button) button.disabled = true;
   notify();
@@ -444,15 +428,18 @@ async function run(task, button) {
   }
 }
 
+// Wire each show/hide control to the password input it names.
 for (const button of $('access').querySelectorAll('[data-password-toggle]')) {
   button.onclick = () => setPasswordVisible(button, $(button.getAttribute('aria-controls')).type === 'password');
 }
 
+// Switch between sign-in and registration while clearing old feedback.
 $('access-switch').onclick = () => {
   setAccessMode(accessMode === 'register' ? 'login' : 'register');
   notify();
 };
 
+// Carry the typed email from sign-in into the reset request form and focus it.
 $('forgot-password').onclick = () => {
   resetRequestForm.elements.email.value = accessForm.elements.email.value;
   setAccessMode('request');
@@ -460,6 +447,7 @@ $('forgot-password').onclick = () => {
   notify();
 };
 
+// Return to sign-in after recovery and preserve the email from the reset request form.
 $('reset-back').onclick = () => {
   if (accessMode === 'request') accessForm.elements.email.value = resetRequestForm.elements.email.value;
   setAccessMode('login');
@@ -467,6 +455,8 @@ $('reset-back').onclick = () => {
   notify();
 };
 
+// Register or sign in through the API. Store the token after a successful login and clear the password
+// after every attempt.
 accessForm.onsubmit = event => {
   event.preventDefault();
   void run(async () => {
@@ -475,13 +465,13 @@ accessForm.onsubmit = event => {
     $('forgot-password').disabled = true;
     try {
       if (accessMode === 'register') {
-        await api('/auth/register', credentials);
+        await client.request('/auth/register', credentials);
         setAccessMode('login');
         notify('Account created. Sign in to continue.');
         return;
       }
-      const result = await api('/auth/login', credentials);
-      saveToken(result.token);
+      const result = await client.request('/auth/login', credentials);
+      client.token = result.token;
       await openWorkspace(result.user);
     } finally {
       accessForm.elements.password.value = '';
@@ -492,12 +482,13 @@ accessForm.onsubmit = event => {
   }, $('access-submit'));
 };
 
+// Request a recovery link and show the generic confirmation for the configured delivery mode.
 resetRequestForm.onsubmit = event => {
   event.preventDefault();
   void run(async () => {
     $('reset-back').disabled = true;
     try {
-      const { delivery } = await api('/auth/password-reset/request', { email: resetRequestForm.elements.email.value });
+      const { delivery } = await client.request('/auth/password-reset/request', { email: resetRequestForm.elements.email.value });
       if (delivery === 'local') notify('If an account matches that email, a reset link will appear in the local API log.');
       else notify('If an account matches that email, you’ll receive a password reset link.');
     } finally {
@@ -506,6 +497,8 @@ resetRequestForm.onsubmit = event => {
   }, $('reset-request-submit'));
 };
 
+// Check that both password fields match, then exchange the reset token for a new password and return to
+// sign-in.
 resetPasswordForm.onsubmit = event => {
   event.preventDefault();
   void run(async () => {
@@ -516,8 +509,8 @@ resetPasswordForm.onsubmit = event => {
     }
     $('reset-back').disabled = true;
     try {
-      await api('/auth/password-reset/confirm', { token: resetToken, password: password.value });
-      saveToken(null);
+      await client.request('/auth/password-reset/confirm', { token: resetToken, password: password.value });
+      client.token = null;
       setAccessMode('login');
       accessForm.elements.email.focus();
       notify('Password updated. Sign in with your new password.');
@@ -527,6 +520,7 @@ resetPasswordForm.onsubmit = event => {
   }, $('reset-password-submit'));
 };
 
+// Fill the ticket form with an editable sample message and focus the input.
 for (const button of $('ticket-examples').querySelectorAll('button')) {
   button.onclick = () => {
     ticketForm.elements.message.value = examples[button.dataset.sample];
@@ -534,17 +528,19 @@ for (const button of $('ticket-examples').querySelectorAll('button')) {
   };
 }
 
+// Submit the ticket and display its ID and routing outcome. Treat a failure to refresh the history
+// separately from a failure to save the ticket.
 ticketForm.onsubmit = event => {
   event.preventDefault();
   void run(async () => {
     const message = ticketForm.elements.message;
-    const requestToken = token;
+    const requestToken = client.token;
     message.readOnly = true;
     $('ticket-examples').disabled = true;
     notify('Submitting ticket…');
     try {
-      const { ticket } = await api('/tickets', { message: message.value });
-      if (requestToken !== token) return;
+      const { ticket } = await client.request('/tickets', { message: message.value });
+      if (requestToken !== client.token) return;
       ticketForm.reset();
       const confirmation = ticket.status === 'manual_review'
         ? 'Your ticket was saved for manual review.'
@@ -552,7 +548,7 @@ ticketForm.onsubmit = event => {
       const saved = `${confirmation} Ticket ID ${ticket.id}.`;
       notify(saved);
       try {
-        await loadCustomerTickets();
+        await customerTickets.load();
       } catch {
         notify(saved + ' Refresh your tickets to see the latest history.', true);
       }
@@ -563,16 +559,19 @@ ticketForm.onsubmit = event => {
   }, $('ticket-submit'));
 };
 
+// Apply the current search and filters by loading a fresh first page.
 queueForm.onsubmit = event => {
   event.preventDefault();
   void run(() => loadQueue(selectedQueueFilters()));
 };
 
+// Prepare the shared confirmation dialog for a ticket or account. Save the current session with the
+// target to prevent reuse after an account switch.
 function confirmDeletion(collection, record) {
   if (!adminId || deleteDialog.open) return;
   const user = collection === 'users';
   const action = user ? 'Remove user' : 'Delete ticket';
-  deleteTarget = { collection, id: record.id, session: token };
+  deleteTarget = { collection, id: record.id, session: client.token };
   $('delete-title').textContent = action + '?';
   $('delete-confirm').textContent = action;
   $('delete-message').textContent = user
@@ -586,24 +585,28 @@ $('delete-ticket').onclick = () => {
   if (activeDetail?.ticket && !saving) confirmDeletion('tickets', activeDetail.ticket);
 };
 
+// Keep the confirmation dialog open while a deletion is in progress.
 deleteDialog.oncancel = event => {
   if ($('delete-confirm').disabled) event.preventDefault();
 };
+// Discard the selected target when the confirmation dialog closes.
 deleteDialog.onclose = () => { if (!deleteDialog.open) deleteTarget = null; };
+// Send the confirmed admin deletion and refresh the active page. Handle a missing record as already
+// removed and keep other errors inside the dialog.
 deleteDialog.querySelector('form').onsubmit = async event => {
   if (event.submitter !== $('delete-confirm')) return;
   event.preventDefault();
   const target = deleteTarget;
-  if (!target || !adminId || target.session !== token || $('delete-confirm').disabled) return;
+  if (!target || !adminId || target.session !== client.token || $('delete-confirm').disabled) return;
   $('delete-confirm').disabled = true;
   $('delete-cancel').disabled = true;
   $('delete-error').textContent = '';
   const user = target.collection === 'users';
   let message = user ? 'User removed.' : 'Ticket deleted.';
   try {
-    await api(`/admin/${target.collection}/${encodeURIComponent(target.id)}`, undefined, 'DELETE');
+    await client.request(`/admin/${target.collection}/${encodeURIComponent(target.id)}`, undefined, 'DELETE');
   } catch (error) {
-    if (target.session !== token) return;
+    if (target.session !== client.token) return;
     if (error.status !== 404) {
       $('delete-error').textContent = errorMessage(error);
       return;
@@ -613,7 +616,7 @@ deleteDialog.querySelector('form').onsubmit = async event => {
     $('delete-confirm').disabled = false;
     $('delete-cancel').disabled = false;
   }
-  if (target.session !== token || !adminId) return;
+  if (target.session !== client.token || !adminId) return;
   deleteDialog.close();
   if (!user && detailDialog.open && target.id === activeDetail?.id) detailDialog.close();
   if (user) $('staff-title').focus();
@@ -621,10 +624,12 @@ deleteDialog.querySelector('form').onsubmit = async event => {
   try {
     await openAdminPage();
   } catch (error) {
-    if (target.session === token) notify(`${message} ${errorMessage(error)}`, true);
+    if (target.session === client.token) notify(`${message} ${errorMessage(error)}`, true);
   }
 };
 
+// Send changed fields with the version originally loaded. On a conflict, reload the latest ticket so
+// staff can review it before trying again.
 editForm.onsubmit = async event => {
   event.preventDefault();
   const detail = activeDetail;
@@ -644,19 +649,19 @@ editForm.onsubmit = async event => {
   }
   const path = '/tickets/' + encodeURIComponent(detail.id);
   const isCurrent = () => activeDetail === detail && detailDialog.open;
-  const requestToken = token;
+  const requestToken = client.token;
   saving = true;
   $('delete-ticket').disabled = true;
   $('edit-save').disabled = true;
   $('edit-fields').disabled = true;
   detailNotice('Saving changes…');
   try {
-    const { ticket } = await api(path, { ...patch, version: current.version }, 'PATCH');
+    const { ticket } = await client.request(path, { ...patch, version: current.version }, 'PATCH');
     if (isCurrent()) {
       renderDetail(detail, ticket);
       detailNotice('Ticket updated.');
     }
-    if (requestToken === token) {
+    if (requestToken === client.token) {
       try {
         await Promise.all([loadQueue(), loadStats()]);
       } catch {
@@ -666,7 +671,7 @@ editForm.onsubmit = async event => {
   } catch (error) {
     if (error.status === 409 && isCurrent()) {
       try {
-        const { ticket } = await api(path);
+        const { ticket } = await client.request(path);
         if (isCurrent()) {
           renderDetail(detail, ticket);
           detailNotice('This ticket changed while you were editing. Review its current values and apply your changes again.', true);
@@ -685,29 +690,36 @@ editForm.onsubmit = async event => {
   }
 };
 
+// Discard the active detail request and restore keyboard focus to the queue heading if focus fell back
+// to the page.
 detailDialog.onclose = () => {
   activeDetail = null;
   if (document.activeElement === document.body && !$('staff').hidden) $('queue-title').focus();
 };
 
-$('refresh-customer-tickets').onclick = () => void run(() => loadCustomerTickets());
-$('more-customer-tickets').onclick = () => void run(() => loadCustomerTickets(nextCustomerTicket));
+// Connect the list controls to either a fresh load or a cursor-based next page.
+$('refresh-customer-tickets').onclick = () => void run(() => customerTickets.load());
+$('more-customer-tickets').onclick = () => void run(() => customerTickets.loadMore());
 $('more-users').onclick = () => void run(() => loadUsers(nextUser), $('more-users'));
 $('more-tickets').onclick = () => void run(() => loadQueue(queueFilters, nextQueueTicket));
+// Handle reset links and admin navigation when the URL fragment changes.
 window.addEventListener('hashchange', () => {
   if (!openResetLink() && document.body.classList.contains('admin-mode')) void run(() => openAdminPage(true));
 });
+// End the server session and clear the stored token before returning to sign-in.
 $('logout').onclick = () => void run(async () => {
-  await api('/auth/logout', {});
-  saveToken(null);
+  await client.request('/auth/logout', {});
+  client.token = null;
   ticketForm.reset();
   show('access');
 }, $('logout'));
 
+// At startup, handle a recovery link first. Otherwise, validate any stored session before opening its
+// workspace.
 if (!openResetLink()) {
-  if (token) {
+  if (client.token) {
     try {
-      await openWorkspace((await api('/auth/me')).user);
+      await openWorkspace((await client.request('/auth/me')).user);
     } catch (error) {
       if ($('staff').hidden && $('customer').hidden) show('access');
       notify(errorMessage(error), true);
