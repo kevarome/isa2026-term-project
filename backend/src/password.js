@@ -2,6 +2,9 @@ import { scrypt, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 
 const derive = promisify(scrypt);
+// scrypt cost settings: N = 2^15 controls memory and CPU work, r = 8 is the
+// block size, p = 3 increases parallel work, and maxmem limits this operation
+// to 64 MiB. The limit is above scrypt's roughly 32 MiB requirement here.
 const options = { N: 32768, r: 8, p: 3, maxmem: 64 * 1024 * 1024 };
 
 // Derive a 64-byte password hash with scrypt and encode it as salt:hex.
