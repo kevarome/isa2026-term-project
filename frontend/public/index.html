@@ -7,6 +7,7 @@
   <title>TicketMaestro | NorthLink Internet</title>
   <link rel="stylesheet" href="./style.css">
   <link rel="stylesheet" href="./admin.css">
+  <!-- The JavaScript entry point restores the session and connects the forms, dialogs, and role-specific workspaces. -->
   <script type="module" src="./app.js"></script>
 </head>
 <body>
@@ -17,6 +18,7 @@
   </header>
   <main>
     <p id="notice" role="status"></p>
+    <!-- The access card alternates between sign-in, account creation, and the two password recovery steps. -->
     <section id="access" class="access" hidden>
       <div class="intro">
         <h1>NorthLink support</h1>
@@ -65,6 +67,7 @@
         </div>
       </div>
     </section>
+    <!-- Customers submit support messages and view the status and history of their own tickets. -->
     <section id="customer" hidden>
       <h1>Support workspace</h1>
       <p id="customer-email" class="workspace-account"></p>
@@ -97,6 +100,7 @@
         </section>
       </div>
     </section>
+    <!-- Staff and administrators share the queue. Administrators also get navigation, usage reporting, and account management. -->
     <section id="staff" hidden>
       <aside id="admin-sidebar" hidden aria-label="Administration">
         <div class="workspace-identity"><span class="org-avatar" aria-hidden="true">N</span><div><strong>NorthLink</strong><small>Admin workspace</small></div></div>
@@ -112,6 +116,7 @@
       <div class="staff-body">
       <h1 id="staff-title" tabindex="-1">Support dashboard</h1>
       <p id="staff-email" class="workspace-account"></p>
+      <!-- The report starts hidden. JavaScript fills the totals, interactive chart, and tables after loading the selected period. -->
       <section id="usage-panel" hidden aria-labelledby="staff-title">
         <div class="report-controls">
           <div><label for="usage-period" class="sr-only">Reporting period</label>
@@ -165,6 +170,7 @@
           </details>
         </div>
       </section>
+      <!-- The support queue combines assignment statistics with search, filters, and pagination. -->
       <div id="staff-queue">
       <details class="card staff-section stats">
         <summary><span>Ticket statistics</span><span id="stats-total" class="muted">Loading…</span></summary>
@@ -207,6 +213,7 @@
         <button id="more-tickets" type="button" class="link" hidden>Load more tickets</button>
       </section>
       </div>
+      <!-- JavaScript adds registered account rows and removal controls for eligible accounts. -->
       <section id="admin-users" class="card staff-section" hidden>
         <p id="totals" class="muted" role="status"></p>
         <div class="table-wrap"><table>
@@ -217,6 +224,7 @@
       </section>
       </div>
     </section>
+    <!-- The shared ticket dialog presents current routing. Support users also see the saved AI result and editing controls. -->
     <dialog id="ticket-detail" aria-labelledby="detail-title">
       <div class="dialog-header">
         <h2 id="detail-title">Ticket details</h2>
@@ -269,6 +277,7 @@
         </form>
       </div>
     </dialog>
+    <!-- Both admin delete actions use this dialog. JavaScript sets the target, explanation, and confirm button text. -->
     <dialog id="confirm-delete" aria-labelledby="delete-title" aria-describedby="delete-message">
       <h2 id="delete-title"></h2>
       <p id="delete-message"></p>

@@ -1,3 +1,4 @@
+/* Style the shared brand mark and define a visually hidden utility that preserves accessible text. */
 .brand { display: inline-flex; gap: .55rem; align-items: center; }
 .brand-mark {
   display: inline-block; width: 1.05rem; height: 1.15rem;
@@ -5,6 +6,7 @@
   border-radius: 2px; transform: skewY(-18deg);
 }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+/* Apply the admin shell when JavaScript sets admin mode on the body. */
 .admin-mode {
   --ink: #172f30; --muted: #4c6164; --line: #d7e1df;
   --teal: #137a70; --error: #b24d39; --tint: #e0f3ec;
@@ -18,6 +20,7 @@
 .admin-mode header button { background: transparent; color: white; border: 1px solid #73968d; padding: .3rem .8rem; font-size: .85rem; }
 .admin-mode main { max-width: none; padding: 0; }
 .admin-mode #notice { margin: 0; border-radius: 0; }
+/* Distinguish destructive controls and arrange actions in the ticket edit and confirmation dialogs. */
 .danger-action {
   border: 1px solid #b15f50; color: #8b392b; background: white;
   padding: .4rem .7rem; white-space: nowrap;
@@ -33,6 +36,7 @@
 #delete-error { color: #822a17; }
 #delete-error:empty { display: none; }
 .admin-mode #staff { display: grid; grid-template-columns: 13.5rem minmax(0, 1fr); min-height: calc(100vh - 3.5rem); }
+/* Keep administrator navigation and the signed-in identity together. The current page is indicated by aria-current. */
 #admin-sidebar {
   display: flex; flex-direction: column; gap: 1.8rem; background: #fbfcfb;
   border-right: 1px solid var(--line); padding: 1.75rem .9rem 1rem;
@@ -57,6 +61,7 @@
 .admin-mode .staff-body { width: 100%; max-width: 94rem; min-width: 0; margin: 0 auto; padding: clamp(1.25rem, 3vw, 3.3rem); }
 .admin-mode #staff-title { font-size: clamp(1.9rem, 3vw, 2.6rem); line-height: 1.15; letter-spacing: -.045em; }
 .admin-mode .staff-section, .report-card, .metric-grid { background: white; border: 1px solid var(--line); border-radius: .75rem; }
+/* Lay out the reporting period, refresh button, and report status. */
 .report-controls, .report-controls > div, .report-heading, .chart-legend { display: flex; align-items: center; gap: .7rem; }
 .report-controls { flex-direction: row-reverse; flex-wrap: wrap-reverse; justify-content: space-between; margin: .5rem 0 1.5rem; }
 .report-controls > div { flex-wrap: wrap; gap: .45rem; }
@@ -71,6 +76,7 @@
 .report-state { color: var(--muted); }
 .report-state:empty { display: none; }
 .report-state.error { padding: .8rem 1rem; background: #fff1ec; color: #8d3728; border-radius: .5rem; }
+/* Show report totals in a grid with aligned digits so the values are easy to scan. */
 .metric-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 0 0 1.1rem; overflow: hidden; }
 .metric-grid > div { padding: 1.15rem clamp(.8rem, 1.6vw, 1.6rem); }
 .metric-grid > div + div { border-left: 1px solid var(--line); }
@@ -85,6 +91,7 @@
 .chart-legend span::before { display: inline-block; content: ""; width: .56rem; height: .56rem; border-radius: 2px; margin-right: .35rem; background: var(--teal); }
 .chart-legend span + span::before { background: var(--error); }
 .report-empty { margin: 1rem 1.25rem 2rem; }
+/* Build the chart layout around a scale, stacked daily bars, and date labels. JavaScript supplies bar heights and keyboard focus. */
 #traffic-graph { margin: .6rem 1.25rem 0; }
 .plot { display: grid; grid-template-columns: 2.5rem minmax(0, 1fr); align-items: stretch; height: clamp(9rem, 16vw, 13.5rem); }
 #chart-scale { display: flex; flex-direction: column; justify-content: space-between; font-size: .71rem; color: var(--muted); line-height: 1; margin: -.4em 0; }
@@ -102,6 +109,7 @@
 #chart-dates.dense-axis > :first-child { justify-self: start; }
 #chart-dates.dense-axis > :last-child { justify-self: end; }
 #chart-detail { border-top: 1px solid var(--line); margin: .7rem 0 0; padding: .6rem 0; font-variant-numeric: tabular-nums; }
+/* Place endpoint and caller tables side by side when they fit and align their numeric columns. */
 .report-tables { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); align-items: start; gap: 1rem; margin-top: 1.1rem; }
 .report-card table { font-size: .81rem; }
 .report-card :is(th, td) { padding: .62rem .4rem; }
@@ -116,6 +124,7 @@
 .table-action { border: 0; border-top: 1px solid var(--line); border-radius: 0; width: 100%; text-align: left; padding: .65rem 1.25rem; background: transparent; color: #0b6559; font-size: .8rem; }
 .report-help { margin: 1.1rem 0; max-width: 52rem; font-size: .8rem; color: var(--muted); }
 .report-help summary { cursor: pointer; font-weight: 600; }
+/* Adapt the report, navigation, and metric grid for narrower screens. */
 @media (max-width: 1050px) {
   .admin-mode #staff { grid-template-columns: 11rem minmax(0, 1fr); }
   .report-tables { grid-template-columns: 1fr; }

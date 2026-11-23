@@ -1,3 +1,5 @@
+# Apply security headers to all static asset paths. Keep the CSP connect-src origin aligned with
+# config.js so requests can reach the API.
 /*
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY
