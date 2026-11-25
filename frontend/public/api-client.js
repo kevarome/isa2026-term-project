@@ -1,3 +1,4 @@
+import { messages } from './messages.js';
 // Owns the browser session and uses it for requests to the TicketMaestro API.
 export class ApiClient {
   #token;
@@ -45,7 +46,7 @@ export class ApiClient {
     }
     const result = await response.json().catch(() => null);
     if (!response.ok || !result) {
-      throw Object.assign(new Error(result?.error || 'Request failed. Try again.'), { status: response.status });
+      throw Object.assign(new Error(result?.error || messages.requestFailed), { status: response.status });
     }
     return result;
   }

@@ -1,3 +1,4 @@
+import { messages } from './messages.js';
 // Render the admin usage report with UTC dates so every browser shows the same reporting period.
 const $ = id => document.getElementById(id);
 const number = new Intl.NumberFormat();
@@ -109,14 +110,14 @@ function render(report) {
   // state in sync.
   function showEndpoints(expanded) {
     renderTable($('usage-endpoints'), expanded ? endpoints : endpoints.slice(0, 5),
-      entry => [textSpan(entry.method, 'method'), textSpan(entry.route, 'route')], 'No endpoint activity.');
-    more.textContent = expanded ? 'Show fewer endpoints' : 'Show all ' + endpoints.length + ' endpoints';
+      entry => [textSpan(entry.method, 'method'), textSpan(entry.route, 'route')], messages.noActivity);
+    more.textContent = expanded ? messages.showFewer : messages.showEndpoints(endpoints.length);
     more.setAttribute('aria-expanded', String(expanded));
   }
   showEndpoints(false);
   more.hidden = endpoints.length <= 5;
   more.onclick = () => showEndpoints(more.getAttribute('aria-expanded') !== 'true');
-  renderTable($('usage-callers'), users, entry => [entry.email], 'No identified callers in this period.');
+  renderTable($('usage-callers'), users, entry => [entry.email], messages.noCallers);
 }
 
 // Owns the active report and ignores responses from a previous page or reporting period.
@@ -153,7 +154,7 @@ export class UsageReport {
   async load() {
     this.clear();
     const current = this.#revision;
-    this.#state.textContent = 'Loading API usage…';
+    this.#state.textContent = messages.loadingUsage;
     this.#refresh.disabled = true;
     try {
       const report = await this.#client.request('/admin/usage?days=' + this.#period.value);
@@ -163,7 +164,7 @@ export class UsageReport {
       this.#state.textContent = '';
     } catch (error) {
       if (current !== this.#revision) return;
-      this.#state.textContent = 'Could not load API usage. ' + (error instanceof TypeError ? 'Check your connection and refresh.' : error.message);
+      this.#state.textContent = messages.usageFailed + (error instanceof TypeError ? messages.retryConnection : error.message);
       this.#state.classList.add('error');
     } finally {
       if (current === this.#revision) this.#refresh.disabled = false;

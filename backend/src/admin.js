@@ -1,3 +1,4 @@
+import { messages } from './messages.js';
 import { roleColumn } from './auth.js';
 
 // Own the account directory and destructive operations shared by the administration routes.
@@ -13,8 +14,8 @@ export class AdminController {
   registerRoutes(app, authenticate, requireAdmin, usageReport) {
     app.get('/api/admin/usage', authenticate, requireAdmin, usageReport);
     app.get('/api/admin/users', authenticate, requireAdmin, this.#listUsers.bind(this));
-    app.delete('/api/admin/users/:id', authenticate, requireAdmin, this.#deleteAsAdmin('users', 'User not found.'));
-    app.delete('/api/admin/tickets/:id', authenticate, requireAdmin, this.#deleteAsAdmin('tickets', 'Ticket not found.'));
+    app.delete('/api/admin/users/:id', authenticate, requireAdmin, this.#deleteAsAdmin('users', messages.userMissing));
+    app.delete('/api/admin/tickets/:id', authenticate, requireAdmin, this.#deleteAsAdmin('tickets', messages.ticketMissing));
   }
 
   // Return up to 50 registered accounts in email order with the overall account and submission totals.
@@ -45,7 +46,7 @@ export class AdminController {
     // Refuse self-deletion and distinguish an expired session, a role change, and a missing record.
     return async (req, res) => {
       if (table === 'users' && req.params.id === res.locals.user.id) {
-        return res.status(409).json({ error: 'You cannot remove your own account.' });
+        return res.status(409).json({ error: messages.cannotRemoveSelf });
       }
       // Check the session in the write so two admins cannot remove each other.
       const deleted = await this.#db.prepare(`
@@ -54,8 +55,8 @@ export class AdminController {
       if (deleted) return res.json({ deleted: true });
 
       const role = await this.#db.prepare(sessionRole).bind(res.locals.tokenHash).first('role');
-      if (!role) return res.status(401).json({ error: 'Sign in to continue.' });
-      if (role !== 'admin') return res.status(403).json({ error: 'Administrator access required.' });
+      if (!role) return res.status(401).json({ error: messages.signInRequired });
+      if (role !== 'admin') return res.status(403).json({ error: messages.adminRequired });
       return res.status(404).json({ error: missingMessage });
     };
   }

@@ -1,3 +1,4 @@
+import { messages } from './messages.js';
 import { ResetDelivery, resetLinkMinutes } from './reset-delivery-base.js';
 
 export class EmailResetDelivery extends ResetDelivery {
@@ -19,8 +20,8 @@ export class EmailResetDelivery extends ResetDelivery {
       body: JSON.stringify({
         from: this.#env.PASSWORD_RESET_FROM,
         to: [email],
-        subject: 'Reset your TicketMaestro password',
-        text: `Set a new password using this link within ${resetLinkMinutes} minutes:\n\n${this.linkFor(token)}\n\nIf you did not request this, you can ignore this email.`
+        subject: messages.resetSubject,
+        text: messages.resetEmail(resetLinkMinutes, this.linkFor(token))
       }),
       signal: AbortSignal.timeout(10000)
     });

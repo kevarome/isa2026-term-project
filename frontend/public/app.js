@@ -1,3 +1,4 @@
+import { examples, labels, messages, modelNames, reviewReasons } from './messages.js';
 // The browser entry point connects the HTML controls to the API and opens the workspace for the
 // signed-in role.
 import { API_ORIGIN } from './config.js';
@@ -14,33 +15,6 @@ const queueForm = $('queue-form');
 const detailDialog = $('ticket-detail');
 const deleteDialog = $('confirm-delete');
 const editForm = $('edit-ticket');
-// Translate API identifiers into the names displayed in the forms, queues, and statistics.
-const labels = {
-  billing: 'Billing', technical: 'Technical', account: 'Account',
-  general: 'General Support', low: 'Low', medium: 'Medium', high: 'High',
-  manual_review: 'Awaiting manual review', open: 'Open', in_progress: 'In progress',
-  resolved: 'Resolved', closed: 'Closed', unclassified: 'Unclassified',
-  unassigned: 'Unassigned', unprioritized: 'Unprioritized'
-};
-const reviewReasons = {
-  low_confidence: 'Confidence was below the routing threshold.',
-  unavailable: 'AI classification was unavailable when this ticket was submitted.',
-  invalid_output: 'The model returned an invalid classification.',
-  provider_error: 'The model request failed.',
-  timeout: 'The model request timed out.',
-  seeded: 'Seeded demo ticket.'
-};
-const modelNames = {
-  '@cf/cloudflare/clef-flash': 'Cloudflare Clef Flash',
-  'typesafe/jev': 'TypeSafe Jev',
-  'typesafe/jev-1.14.0': 'TypeSafe Jev 1.14'
-};
-const examples = {
-  outage: 'My internet has been down since this morning, and I need the connection to work from home.',
-  billing: 'My internet bill shows the same monthly plan charge twice. Could you check the second charge?',
-  account: 'I forgot my password and the reset email never arrived. Can you help me regain access?',
-  plan: 'Which residential plans are available for a household that streams video on two devices?'
-};
 const percent = new Intl.NumberFormat(undefined, { style: 'percent', maximumFractionDigits: 1 });
 // Keep the current form, page cursors, and pending dialog actions in memory for this tab.
 let accessMode = 'login';
@@ -100,14 +74,14 @@ function show(view, admin = false) {
 
 // Give network failures a friendly message and display the API error message for other failures.
 function errorMessage(error) {
-  return error instanceof TypeError ? 'Could not reach the API. Try again.' : error.message;
+  return error instanceof TypeError ? messages.networkError : error.message;
 }
 
 // Use aria-controls to find the input and keep the button text and accessible label in sync with
 // visibility.
 function setPasswordVisible(button, visible) {
   $(button.getAttribute('aria-controls')).type = visible ? 'text' : 'password';
-  button.textContent = visible ? 'Hide' : 'Show';
+  button.textContent = visible ? messages.hide : messages.show;
   button.setAttribute('aria-label', `${button.textContent} ${button.dataset.passwordToggle}`);
 }
 
@@ -117,14 +91,14 @@ function setAccessMode(mode) {
   accessMode = mode;
   const registering = mode === 'register';
   const authenticating = mode === 'login' || registering;
-  const title = { login: 'Sign in', register: 'Create an account', request: 'Forgot password?', reset: 'Reset password' };
+  const title = { login: messages.login, register: messages.register, request: messages.forgotPassword, reset: messages.resetPassword };
   $('access-title').textContent = title[mode];
   accessForm.hidden = !authenticating;
   resetRequestForm.hidden = mode !== 'request';
   resetPasswordForm.hidden = mode !== 'reset';
   $('access-submit').textContent = title[mode];
   $('access-switch').hidden = !authenticating;
-  $('access-switch').textContent = registering ? 'Back to sign in' : 'Create an account';
+  $('access-switch').textContent = registering ? messages.backToLogin : messages.register;
   $('forgot-password').hidden = mode !== 'login';
   $('reset-back').hidden = authenticating;
   const password = accessForm.elements.password;
@@ -146,7 +120,7 @@ function openResetLink() {
   show('access');
   if (!/^[a-f0-9]{64}$/.test(value)) {
     setAccessMode('request');
-    notify('This reset link is invalid. Request a new one.', true);
+    notify(messages.invalidReset, true);
     resetRequestForm.elements.email.focus();
     return true;
   }
@@ -173,7 +147,7 @@ function ticketRow(ticket, staff) {
   const status = node('span', labels[ticket.status], 'ticket-status');
   status.dataset.status = ticket.status;
   const priority = ticketPriority(ticket);
-  const priorityText = node('span', priority ? labels[priority] + ' priority' : labels.unprioritized, 'ticket-priority');
+  const priorityText = node('span', priority ? messages.priorityLabel(labels[priority]) : labels.unprioritized, 'ticket-priority');
   priorityText.dataset.priority = priority ?? '';
   summary.append(status, node('strong', labels[ticket.department] ?? labels.unassigned), priorityText);
   const message = node('span', ticket.message, 'ticket-preview');
@@ -181,7 +155,7 @@ function ticketRow(ticket, staff) {
   const meta = node('span', `${identity}${ticket.created_at} UTC`, 'muted ticket-meta');
   const id = node('span', ticket.id, 'ticket-meta ticket-id muted');
   button.append(summary, message);
-  if (staff) button.append(node('span', 'AI classification · ' + classificationResult(ticket), 'ticket-classification'));
+  if (staff) button.append(node('span', messages.aiClassification(classificationResult(ticket)), 'ticket-classification'));
   button.append(meta, id);
   button.onclick = () => void openTicket(ticket.id, staff);
   row.append(button);
@@ -201,14 +175,14 @@ async function loadUsers(cursor = null) {
     for (const value of [user.email, user.role, user.created_at]) row.insertCell().textContent = value;
     const actions = row.insertCell();
     if (user.id !== adminId) {
-      const remove = node('button', 'Remove', 'danger-action');
+      const remove = node('button', messages.remove, 'danger-action');
       remove.type = 'button';
-      remove.setAttribute('aria-label', `Remove ${user.email}`);
+      remove.setAttribute('aria-label', messages.removeAccount(user.email));
       remove.onclick = () => confirmDeletion('users', user);
       actions.append(remove);
     }
   }
-  $('totals').textContent = `${data.totals.users} registered`;
+  $('totals').textContent = messages.registeredCount(data.totals.users);
   nextUser = data.next;
   $('more-users').hidden = !nextUser;
 }
@@ -233,7 +207,7 @@ async function loadQueue(filters = queueFilters, cursor = null) {
   const request = ++queueRequest;
   const requestToken = client.token;
   const isCurrent = () => request === queueRequest && requestToken === client.token;
-  $('queue-state').textContent = 'Loading tickets…';
+  $('queue-state').textContent = messages.loadingTickets;
   $('apply-filters').disabled = true;
   $('more-tickets').disabled = true;
   try {
@@ -243,14 +217,14 @@ async function loadQueue(filters = queueFilters, cursor = null) {
     if (!cursor) list.replaceChildren();
     list.append(...tickets.map(ticket => ticketRow(ticket, true)));
     $('queue-state').textContent = list.childElementCount
-      ? `${list.childElementCount} ticket${list.childElementCount === 1 ? '' : 's'} shown`
-      : 'No tickets match these filters.';
+      ? messages.ticketsShown(list.childElementCount)
+      : messages.noMatches;
     queueFilters = filters;
     nextQueueTicket = next;
     $('more-tickets').hidden = !next;
   } catch (error) {
     if (isCurrent()) {
-      $('queue-state').textContent = 'Could not load tickets.';
+      $('queue-state').textContent = messages.queueFailed;
       throw error;
     }
   } finally {
@@ -275,12 +249,12 @@ async function loadStats() {
   try {
     const stats = await client.request('/stats');
     if (requestToken !== client.token) return;
-    $('stats-total').textContent = `${stats.total} ticket${stats.total === 1 ? '' : 's'}`;
+    $('stats-total').textContent = messages.ticketCount(stats.total);
     const groups = [
-      ['Assigned department', stats.byDepartment],
-      ['AI category', stats.byCategory],
-      ['Status', stats.byStatus],
-      ['Priority', stats.byPriority]
+      [messages.department, stats.byDepartment],
+      [messages.category, stats.byCategory],
+      [messages.status, stats.byStatus],
+      [messages.priority, stats.byPriority]
     ];
     $('stats-breakdown').replaceChildren(...groups.map(([heading, counts]) => {
       const group = node('section');
@@ -290,7 +264,7 @@ async function loadStats() {
       return group;
     }));
   } catch (error) {
-    if (requestToken === client.token) $('stats-total').textContent = 'Statistics unavailable';
+    if (requestToken === client.token) $('stats-total').textContent = messages.statsUnavailable;
     throw error;
   }
 }
@@ -304,12 +278,12 @@ function classificationResult(ticket) {
   const department = ticket.classification_department ?? ticket.jev_department;
   const urgency = ticket.classification_urgency ?? ticket.jev_urgency;
   if (department && urgency) {
-    result.push(`${labels[department]} · ${labels[urgency]} urgency`);
+    result.push(messages.suggestedRouting(labels[department], labels[urgency]));
   }
-  if (typeof ticket.confidence === 'number') result.push(percent.format(ticket.confidence) + ' confidence');
+  if (typeof ticket.confidence === 'number') result.push(messages.confidence(percent.format(ticket.confidence)));
   const reason = reviewReasons[ticket.classification_outcome];
   if (reason) result.push(reason);
-  return result.join(' · ') || 'This ticket has no saved AI classification.';
+  return result.join(' · ') || messages.noClassification;
 }
 
 // Render the current ticket and keep its latest version for editing. Fill in the routing form and
@@ -318,14 +292,14 @@ function renderDetail(detail, ticket) {
   detail.ticket = ticket;
   $('detail-id').textContent = ticket.id;
   const identity = ticket.email ? ticket.email + ' · ' : '';
-  const updated = ticket.updated_at && ticket.updated_at !== ticket.created_at ? ` · Updated ${ticket.updated_at} UTC` : '';
-  $('detail-submitted').textContent = `${identity}Submitted ${ticket.created_at} UTC${updated}`;
+  const updated = ticket.updated_at && ticket.updated_at !== ticket.created_at ? messages.updatedAt(ticket.updated_at) : '';
+  $('detail-submitted').textContent = identity + messages.submittedAt(ticket.created_at) + updated;
   $('detail-message').textContent = ticket.message;
   const priority = ticketPriority(ticket);
   $('detail-routing').replaceChildren(
-    labeledValue('Status', labels[ticket.status]),
-    labeledValue('Assigned department', labels[ticket.department] ?? labels.unassigned),
-    labeledValue('Priority', labels[priority] ?? labels.unprioritized)
+    labeledValue(messages.status, labels[ticket.status]),
+    labeledValue(messages.department, labels[ticket.department] ?? labels.unassigned),
+    labeledValue(messages.priority, labels[priority] ?? labels.unprioritized)
   );
   $('detail-ai').hidden = !detail.staff;
   editForm.hidden = !detail.staff;
@@ -345,7 +319,7 @@ async function openTicket(id, staff) {
   const detail = { id, staff, ticket: null };
   activeDetail = detail;
   $('detail-content').hidden = true;
-  detailNotice('Loading ticket…');
+  detailNotice(messages.loadingTicket);
   detailDialog.showModal();
   try {
     const { ticket } = await client.request('/tickets/' + encodeURIComponent(id));
@@ -361,7 +335,7 @@ async function openTicket(id, staff) {
 // corresponding data. Move focus to the heading after navigation when requested.
 async function openAdminPage(focusHeading = false) {
   if (!document.body.classList.contains('admin-mode')) return;
-  const pages = { 'api-usage': 'API usage', 'ticket-queue': 'Ticket queue', 'registered-users': 'Registered users' };
+  const pages = { 'api-usage': messages.apiUsage, 'ticket-queue': messages.queue, 'registered-users': messages.registeredUsers };
   const requested = location.hash.slice(1);
   const page = Object.hasOwn(pages, requested) ? requested : 'api-usage';
   $('staff-title').textContent = pages[page];
@@ -385,21 +359,21 @@ async function openWorkspace(user) {
   adminId = user.role === 'admin' ? user.id : null;
   if (user.role === 'admin' || user.role === 'staff') {
     const admin = user.role === 'admin';
-    $('staff-title').textContent = 'Support dashboard';
+    $('staff-title').textContent = messages.staffDashboard;
     $('staff-email').textContent = [user.email, labels[user.department]].filter(Boolean).join(' · ');
     $('staff-email').hidden = admin;
     $('admin-email').textContent = admin ? user.email : '';
     $('admin-users').hidden = true;
     $('usage-panel').hidden = true;
     $('staff-queue').hidden = false;
-    $('queue-title').textContent = admin ? 'Tickets' : 'Ticket queue';
+    $('queue-title').textContent = admin ? messages.tickets : messages.queue;
     $('usage-period').value = '7';
     $('users').replaceChildren();
-    $('totals').textContent = 'Loading users…';
+    $('totals').textContent = messages.loadingUsers;
     $('more-users').hidden = true;
     $('queue-tickets').replaceChildren();
     $('more-tickets').hidden = true;
-    $('stats-total').textContent = 'Loading…';
+    $('stats-total').textContent = messages.loading;
     $('stats-breakdown').replaceChildren();
     queueForm.reset();
     queueForm.elements.department.value = user.department ?? '';
@@ -467,7 +441,7 @@ accessForm.onsubmit = event => {
       if (accessMode === 'register') {
         await client.request('/auth/register', credentials);
         setAccessMode('login');
-        notify('Account created. Sign in to continue.');
+        notify(messages.accountCreated);
         return;
       }
       const result = await client.request('/auth/login', credentials);
@@ -489,8 +463,8 @@ resetRequestForm.onsubmit = event => {
     $('reset-back').disabled = true;
     try {
       const { delivery } = await client.request('/auth/password-reset/request', { email: resetRequestForm.elements.email.value });
-      if (delivery === 'local') notify('If an account matches that email, a reset link will appear in the local API log.');
-      else notify('If an account matches that email, you’ll receive a password reset link.');
+      if (delivery === 'local') notify(messages.resetLocal);
+      else notify(messages.resetEmail);
     } finally {
       $('reset-back').disabled = false;
     }
@@ -505,7 +479,7 @@ resetPasswordForm.onsubmit = event => {
     const { password, confirmation } = resetPasswordForm.elements;
     if (password.value !== confirmation.value) {
       confirmation.focus();
-      throw new Error('The passwords do not match.');
+      throw new Error(messages.passwordMismatch);
     }
     $('reset-back').disabled = true;
     try {
@@ -513,7 +487,7 @@ resetPasswordForm.onsubmit = event => {
       client.token = null;
       setAccessMode('login');
       accessForm.elements.email.focus();
-      notify('Password updated. Sign in with your new password.');
+      notify(messages.passwordUpdated);
     } finally {
       $('reset-back').disabled = false;
     }
@@ -537,20 +511,20 @@ ticketForm.onsubmit = event => {
     const requestToken = client.token;
     message.readOnly = true;
     $('ticket-examples').disabled = true;
-    notify('Submitting ticket…');
+    notify(messages.submitting);
     try {
       const { ticket } = await client.request('/tickets', { message: message.value });
       if (requestToken !== client.token) return;
       ticketForm.reset();
       const confirmation = ticket.status === 'manual_review'
-        ? 'Your ticket was saved for manual review.'
-        : `Your ticket was routed to ${labels[ticket.department]}.`;
-      const saved = `${confirmation} Ticket ID ${ticket.id}.`;
+        ? messages.queuedForReview
+        : messages.routedTo(labels[ticket.department]);
+      const saved = messages.savedTicket(confirmation, ticket.id);
       notify(saved);
       try {
         await customerTickets.load();
       } catch {
-        notify(saved + ' Refresh your tickets to see the latest history.', true);
+        notify(saved + messages.refreshHistory, true);
       }
     } finally {
       message.readOnly = false;
@@ -570,13 +544,13 @@ queueForm.onsubmit = event => {
 function confirmDeletion(collection, record) {
   if (!adminId || deleteDialog.open) return;
   const user = collection === 'users';
-  const action = user ? 'Remove user' : 'Delete ticket';
+  const action = user ? messages.removeUser : messages.deleteTicket;
   deleteTarget = { collection, id: record.id, session: client.token };
   $('delete-title').textContent = action + '?';
   $('delete-confirm').textContent = action;
   $('delete-message').textContent = user
-    ? `Permanently remove ${record.email} and all tickets submitted by this account? This also ends their sessions.`
-    : `Permanently delete ticket ${record.id}?`;
+    ? messages.confirmRemoveUser(record.email)
+    : messages.confirmDeleteTicket(record.id);
   $('delete-error').textContent = '';
   deleteDialog.showModal();
 }
@@ -602,7 +576,7 @@ deleteDialog.querySelector('form').onsubmit = async event => {
   $('delete-cancel').disabled = true;
   $('delete-error').textContent = '';
   const user = target.collection === 'users';
-  let message = user ? 'User removed.' : 'Ticket deleted.';
+  let message = user ? messages.userRemoved : messages.ticketDeleted;
   try {
     await client.request(`/admin/${target.collection}/${encodeURIComponent(target.id)}`, undefined, 'DELETE');
   } catch (error) {
@@ -611,7 +585,7 @@ deleteDialog.querySelector('form').onsubmit = async event => {
       $('delete-error').textContent = errorMessage(error);
       return;
     }
-    message = user ? 'This user was already removed.' : 'This ticket was already deleted.';
+    message = user ? messages.alreadyRemoved : messages.alreadyDeleted;
   } finally {
     $('delete-confirm').disabled = false;
     $('delete-cancel').disabled = false;
@@ -644,7 +618,7 @@ editForm.onsubmit = async event => {
   if (priority !== (ticketPriority(current) ?? null)) patch.priority = priority;
   if (status !== current.status) patch.status = status;
   if (Object.keys(patch).length === 0) {
-    detailNotice('There are no changes to save.');
+    detailNotice(messages.noChanges);
     return;
   }
   const path = '/tickets/' + encodeURIComponent(detail.id);
@@ -654,18 +628,18 @@ editForm.onsubmit = async event => {
   $('delete-ticket').disabled = true;
   $('edit-save').disabled = true;
   $('edit-fields').disabled = true;
-  detailNotice('Saving changes…');
+  detailNotice(messages.saving);
   try {
     const { ticket } = await client.request(path, { ...patch, version: current.version }, 'PATCH');
     if (isCurrent()) {
       renderDetail(detail, ticket);
-      detailNotice('Ticket updated.');
+      detailNotice(messages.updated);
     }
     if (requestToken === client.token) {
       try {
         await Promise.all([loadQueue(), loadStats()]);
       } catch {
-        if (isCurrent()) detailNotice('Ticket updated. Reload the page to refresh the dashboard.', true);
+        if (isCurrent()) detailNotice(messages.refreshDashboard, true);
       }
     }
   } catch (error) {
@@ -674,7 +648,7 @@ editForm.onsubmit = async event => {
         const { ticket } = await client.request(path);
         if (isCurrent()) {
           renderDetail(detail, ticket);
-          detailNotice('This ticket changed while you were editing. Review its current values and apply your changes again.', true);
+          detailNotice(messages.reviewChanges, true);
         }
       } catch (reloadError) {
         if (isCurrent()) detailNotice(errorMessage(reloadError), true);

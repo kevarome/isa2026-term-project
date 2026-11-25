@@ -1,3 +1,4 @@
+import { messages } from './messages.js';
 const dayMs = 86400000;
 const methods = new Set(['GET', 'HEAD', 'POST', 'PATCH', 'PUT', 'DELETE']);
 
@@ -54,7 +55,7 @@ export class ApiUsage {
   report = async (req, res) => {
     const days = req.query.days ?? '7';
     if (!['7', '30', '90'].includes(days)) {
-      return res.status(400).json({ error: 'Choose a reporting period of 7, 30, or 90 days.' });
+      return res.status(400).json({ error: messages.invalidPeriod });
     }
 
     const count = Number(days);

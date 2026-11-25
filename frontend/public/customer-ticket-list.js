@@ -1,3 +1,4 @@
+import { messages } from './messages.js';
 // Manages the customer's ticket history, its page cursor, and the submission count.
 export class CustomerTicketList {
   #client;
@@ -20,7 +21,7 @@ export class CustomerTicketList {
   clear() {
     this.#next = null;
     this.#list.replaceChildren();
-    this.#usage.textContent = 'Loading tickets…';
+    this.#usage.textContent = messages.loadingTickets;
     this.#more.hidden = true;
   }
 
@@ -35,7 +36,7 @@ export class CustomerTicketList {
     const request = ++this.#request;
     const token = this.#client.token;
     const isCurrent = () => request === this.#request && token === this.#client.token;
-    this.#usage.textContent = 'Loading tickets…';
+    this.#usage.textContent = messages.loadingTickets;
     this.#refresh.disabled = true;
     this.#more.disabled = true;
     try {
@@ -45,13 +46,13 @@ export class CustomerTicketList {
       if (!cursor) this.#list.replaceChildren();
       this.#list.append(...tickets.map(this.#renderRow));
       this.#usage.textContent = this.#list.childElementCount || usage
-        ? `${usage} ticket submission${usage === 1 ? '' : 's'}`
-        : 'No tickets yet.';
+        ? messages.submissions(usage)
+        : messages.noTickets;
       this.#next = next;
       this.#more.hidden = !next;
     } catch (error) {
       if (isCurrent()) {
-        this.#usage.textContent = 'Could not load your tickets.';
+        this.#usage.textContent = messages.historyFailed;
         throw error;
       }
     } finally {

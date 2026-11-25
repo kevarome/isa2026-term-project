@@ -1,3 +1,4 @@
+import { messages } from './messages.js';
 import express from 'express';
 import { AuthController } from './auth.js';
 import { AdminController } from './admin.js';
@@ -22,7 +23,7 @@ export function createApp(env, waitUntil) {
     res.set('Cache-Control', 'no-store').vary('Origin');
     const origin = req.get('Origin');
     if (origin && origin !== env.CLIENT_ORIGIN) {
-      return res.status(403).json({ error: 'Origin is not allowed.' });
+      return res.status(403).json({ error: messages.originDenied });
     }
     if (origin) {
       res.set({
@@ -47,15 +48,15 @@ export function createApp(env, waitUntil) {
   admin.registerRoutes(app, auth.authenticate, AuthController.requireAdmin, usage.report);
 
   // Return a JSON 404 for requests that reach the end of the route list.
-  app.use((_req, res) => res.status(404).json({ error: 'Endpoint not found.' }));
+  app.use((_req, res) => res.status(404).json({ error: messages.endpointMissing }));
   // Convert malformed or oversized JSON errors into client responses.
   // Log the error name for unexpected failures and return a generic 500 response.
   app.use((error, _req, res, _next) => {
     if (error.status === 400 || error.status === 413) {
-      return res.status(error.status).json({ error: error.status === 400 ? 'Invalid JSON.' : 'Request is too large.' });
+      return res.status(error.status).json({ error: error.status === 400 ? messages.invalidJson : messages.requestTooLarge });
     }
     console.error('Request failed', error.name);
-    res.status(500).json({ error: 'Something went wrong. Try again later.' });
+    res.status(500).json({ error: messages.serverError });
   });
   return app;
 }

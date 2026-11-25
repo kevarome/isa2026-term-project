@@ -1,9 +1,8 @@
+import { messages } from './messages.js';
 import { hashPassword, verifyPassword } from './password.js';
 import { resetDelivery, resetLinkMinutes } from './reset-delivery.js';
 
 const SESSION_SECONDS = 8 * 60 * 60;
-const passwordLengthError = 'Use a password between 12 and 128 characters.';
-const invalidReset = 'This reset link is invalid or expired. Request a new one.';
 const demoEmails = [
   'john@john.com', 'admin@admin.com',
   'billing@example.test', 'technical@example.test', 'account@example.test', 'general@example.test'
@@ -66,7 +65,7 @@ export class AuthController {
   async #limit(req, res, next) {
     const key = req.get('CF-Connecting-IP') ?? 'local';
     if (!(await this.#env.AUTH_LIMIT.limit({ key })).success) {
-      return res.status(429).json({ error: 'Too many attempts. Try again in a minute.' });
+      return res.status(429).json({ error: messages.authRateLimit });
     }
     next();
   }
@@ -83,7 +82,7 @@ export class AuthController {
       LEFT JOIN staff_profiles staff ON staff.user_id = u.id
       WHERE s.token_hash = ? AND s.expires_at > unixepoch()
     `).bind(tokenHash).first();
-    if (!user) return res.status(401).json({ error: 'Sign in to continue.' });
+    if (!user) return res.status(401).json({ error: messages.signInRequired });
     res.locals.user = identity(user);
     res.locals.tokenHash = tokenHash;
     next();
@@ -92,7 +91,7 @@ export class AuthController {
   // Allow an authenticated administrator to proceed. Return 403 for other roles.
   static requireAdmin(_req, res, next) {
     if (res.locals.user.role !== 'admin') {
-      return res.status(403).json({ error: 'Administrator access required.' });
+      return res.status(403).json({ error: messages.adminRequired });
     }
     next();
   }
@@ -103,17 +102,17 @@ export class AuthController {
     const email = normalizeEmail(req.body?.email);
     const password = req.body?.password;
     if (!validEmail(email)) {
-      return res.status(400).json({ error: 'Enter a valid email address.' });
+      return res.status(400).json({ error: messages.invalidEmail });
     }
     if (!validNewPassword(password)) {
-      return res.status(400).json({ error: passwordLengthError });
+      return res.status(400).json({ error: messages.passwordLength });
     }
-    if (demoEmails.includes(email)) return res.status(409).json({ error: 'This email is reserved.' });
+    if (demoEmails.includes(email)) return res.status(409).json({ error: messages.emailReserved });
     const user = { id: crypto.randomUUID(), email, role: 'user' };
     const result = await this.#db.prepare(
       "INSERT INTO users (id, email, password_hash, role) VALUES (?, ?, ?, 'user') ON CONFLICT(email) DO NOTHING"
     ).bind(user.id, email, await hashPassword(password)).run();
-    if (!result.meta.changes) return res.status(409).json({ error: 'This email is already registered.' });
+    if (!result.meta.changes) return res.status(409).json({ error: messages.emailRegistered });
     res.locals.user = user;
     res.status(201).json({ user });
   }
@@ -124,7 +123,7 @@ export class AuthController {
     const email = normalizeEmail(req.body?.email);
     const password = req.body?.password;
     if (!email || email.length > 254 || typeof password !== 'string' || !password || password.length > 128) {
-      return res.status(400).json({ error: 'Enter your email and password.' });
+      return res.status(400).json({ error: messages.missingCredentials });
     }
     const record = await this.#db.prepare(`
       SELECT u.id, u.email, u.password_hash, ${roleColumn}, staff.department
@@ -133,7 +132,7 @@ export class AuthController {
       WHERE u.email = ?
     `).bind(email).first();
     const valid = await verifyPassword(password, record?.password_hash ?? 'unused-salt:' + '0'.repeat(128));
-    if (!record || !valid) return res.status(401).json({ error: 'Email or password is incorrect.' });
+    if (!record || !valid) return res.status(401).json({ error: messages.invalidCredentials });
 
     const token = newToken();
     const [, session] = await this.#db.batch([
@@ -144,7 +143,7 @@ export class AuthController {
         RETURNING user_id
       `).bind(await digest(token), SESSION_SECONDS, record.id, record.password_hash)
     ]);
-    if (!session.results.length) return res.status(401).json({ error: 'Email or password is incorrect.' });
+    if (!session.results.length) return res.status(401).json({ error: messages.invalidCredentials });
     res.locals.user = identity(record);
     res.json({ token, user: res.locals.user });
   }
@@ -153,9 +152,9 @@ export class AuthController {
   // Use the same accepted response for unknown addresses and suppress hosted reset email for demo accounts.
   async #requestReset(req, res) {
     const email = normalizeEmail(req.body?.email);
-    if (!validEmail(email)) return res.status(400).json({ error: 'Enter a valid email address.' });
+    if (!validEmail(email)) return res.status(400).json({ error: messages.invalidEmail });
     const delivery = resetDelivery(this.#env);
-    if (!delivery) return res.status(503).json({ error: 'Password reset is unavailable right now.' });
+    if (!delivery) return res.status(503).json({ error: messages.resetUnavailable });
 
     const token = newToken();
     const recoveryEmail = delivery.mode === 'email' && demoEmails.includes(email) ? null : email;
@@ -184,20 +183,20 @@ export class AuthController {
   async #confirmReset(req, res) {
     const { token, password } = req.body ?? {};
     if (typeof token !== 'string' || !/^[a-f0-9]{64}$/.test(token)) {
-      return res.status(400).json({ error: invalidReset });
+      return res.status(400).json({ error: messages.invalidReset });
     }
-    if (!validNewPassword(password)) return res.status(400).json({ error: passwordLengthError });
+    if (!validNewPassword(password)) return res.status(400).json({ error: messages.passwordLength });
     const tokenHash = await digest(token);
     const pending = await this.#db.prepare('SELECT 1 FROM password_resets WHERE token_hash = ? AND expires_at > unixepoch()')
       .bind(tokenHash).first();
-    if (!pending) return res.status(400).json({ error: invalidReset });
+    if (!pending) return res.status(400).json({ error: messages.invalidReset });
 
     const updated = await this.#db.prepare(`
       UPDATE users SET password_hash = ?
       WHERE id = (SELECT user_id FROM password_resets WHERE token_hash = ? AND expires_at > unixepoch())
       RETURNING id
     `).bind(await hashPassword(password), tokenHash).first();
-    if (!updated) return res.status(400).json({ error: invalidReset });
+    if (!updated) return res.status(400).json({ error: messages.invalidReset });
     res.json({ reset: true });
   }
 

@@ -1,3 +1,4 @@
+import { messages } from './messages.js';
 import { Ticket } from './ticket.js';
 import { TicketClassifier, clefModel, departments, urgencyLevels } from './classifier.js';
 
@@ -53,7 +54,7 @@ export class TicketController {
   // Require a staff or administrator role after authentication and return 403 for other callers.
   requireSupport(_req, res, next) {
     if (!supportRole(res.locals.user)) {
-      return res.status(403).json({ error: 'Support staff access required.' });
+      return res.status(403).json({ error: messages.staffRequired });
     }
     next();
   }
@@ -69,7 +70,7 @@ export class TicketController {
         typeof q !== 'string' || q.length > 200 || typeof department !== 'string' ||
         (department !== '' && department !== 'unassigned' && !Object.hasOwn(departments, department)) ||
         (status !== '' && !statuses.includes(status))) {
-      return res.status(400).json({ error: 'Invalid ticket filters.' });
+      return res.status(400).json({ error: messages.invalidFilters });
     }
 
     const filters = [];
@@ -102,7 +103,7 @@ export class TicketController {
         values.push(...new Ticket(earlier).pageKey(sort));
       } else {
         const key = decodeCursor(after, sort);
-        if (!key) return res.status(400).json({ error: 'Invalid ticket page cursor.' });
+        if (!key) return res.status(400).json({ error: messages.invalidCursor });
         values.push(...key);
       }
       filters.push(`(${orderColumns.join(', ')}) < (${orderColumns.map(() => '?').join(', ')})`);
@@ -137,10 +138,10 @@ export class TicketController {
     const userId = res.locals.user.id;
     const message = typeof req.body?.message === 'string' ? req.body.message.trim() : '';
     if (message.length < 10 || message.length > 2000) {
-      return res.status(400).json({ error: 'Describe the issue in 10 to 2,000 characters.' });
+      return res.status(400).json({ error: messages.messageLength });
     }
     if (!(await this.env.TICKET_LIMIT.limit({ key: userId })).success) {
-      return res.status(429).json({ error: 'Ticket limit reached. Try again in a minute.' });
+      return res.status(429).json({ error: messages.ticketRateLimit });
     }
     const ai = this.env.AI_MODE === 'offline' ? undefined : this.env.AI;
     const model = this.env.AI_MODEL || clefModel;
@@ -174,7 +175,7 @@ export class TicketController {
         .bind(req.params.id).first()
       : await this.db.prepare('SELECT * FROM tickets WHERE id = ? AND user_id = ?')
         .bind(req.params.id, user.id).first();
-    if (!record) return res.status(404).json({ error: 'Ticket not found.' });
+    if (!record) return res.status(404).json({ error: messages.ticketMissing });
     res.json({ ticket: new Ticket(record).toResponse(staff) });
   }
 
@@ -186,7 +187,7 @@ export class TicketController {
     if (!changes || Array.isArray(changes) ||
         !Object.keys(changes).some(key => editable.includes(key)) ||
         Object.keys(changes).some(key => !editable.includes(key) && key !== 'version')) {
-      return res.status(400).json({ error: 'Provide a department, priority, or status update.' });
+      return res.status(400).json({ error: messages.missingEdit });
     }
     const { department, priority, status, version } = changes;
     if ((department !== undefined && department !== null &&
@@ -195,13 +196,13 @@ export class TicketController {
           (typeof priority !== 'string' || !Object.hasOwn(urgencyLevels, priority))) ||
         (status !== undefined && !statuses.includes(status)) ||
         (version !== undefined && (!Number.isSafeInteger(version) || version < 1))) {
-      return res.status(400).json({ error: 'Invalid department, priority, status, or version.' });
+      return res.status(400).json({ error: messages.invalidEdit });
     }
     const record = await this.db.prepare('SELECT t.*, u.email FROM tickets t JOIN users u ON u.id = t.user_id WHERE t.id = ?')
       .bind(req.params.id).first();
-    if (!record) return res.status(404).json({ error: 'Ticket not found.' });
+    if (!record) return res.status(404).json({ error: messages.ticketMissing });
     if (version !== undefined && version !== record.version) {
-      return res.status(409).json({ error: 'This ticket changed. Reload it before saving again.' });
+      return res.status(409).json({ error: messages.editConflict });
     }
     const next = new Ticket(record).routingAfter(changes);
     const updated = await this.db.prepare(`
@@ -211,7 +212,7 @@ export class TicketController {
       WHERE id = ? AND version = ?
       RETURNING *
     `).bind(next.department, next.priority, next.status, record.id, record.version).first();
-    if (!updated) return res.status(409).json({ error: 'This ticket changed. Reload it before saving again.' });
+    if (!updated) return res.status(409).json({ error: messages.editConflict });
     res.json({ ticket: new Ticket({ ...updated, email: record.email }).toResponse(true) });
   }
 
