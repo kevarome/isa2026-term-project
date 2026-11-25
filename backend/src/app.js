@@ -51,9 +51,10 @@ export function createApp(env, waitUntil) {
     res.json({ status: 'ok', database: 'connected' });
   });
 
-  auth.registerRoutes(api);
-  tickets.registerRoutes(api, auth.authenticate, AuthController.requireAdmin);
-  admin.registerRoutes(api, auth.authenticate, AuthController.requireAdmin, usage.report);
+  auth.registerRoutes(api, usage.consume);
+  const counted = [auth.authenticate, usage.consume];
+  tickets.registerRoutes(api, counted, AuthController.requireAdmin);
+  admin.registerRoutes(api, counted, AuthController.requireAdmin, usage.report);
   app.use('/api/v1', api);
   app.use('/api', api);
 

@@ -41,12 +41,12 @@ export class CustomerTicketList {
     this.#more.disabled = true;
     try {
       const path = '/tickets' + (cursor ? '?after=' + encodeURIComponent(cursor) : '');
-      const { tickets, usage, next } = await this.#client.request(path);
+      const { tickets, submissions, next } = await this.#client.request(path);
       if (!isCurrent()) return;
       if (!cursor) this.#list.replaceChildren();
       this.#list.append(...tickets.map(this.#renderRow));
-      this.#usage.textContent = this.#list.childElementCount || usage
-        ? messages.submissions(usage)
+      this.#usage.textContent = this.#list.childElementCount || submissions
+        ? messages.submissions(submissions)
         : messages.noTickets;
       this.#next = next;
       this.#more.hidden = !next;

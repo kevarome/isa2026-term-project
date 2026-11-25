@@ -50,14 +50,14 @@ export class AuthController {
   }
 
   // Install the rate-limited public endpoints and protect the two active-session endpoints.
-  registerRoutes(app) {
+  registerRoutes(app, consume) {
     const limit = this.#limit.bind(this);
     app.post('/auth/register', limit, this.#register.bind(this));
     app.post('/auth/login', limit, this.#login.bind(this));
     app.post('/auth/password-reset/request', limit, this.#requestReset.bind(this));
     app.post('/auth/password-reset/confirm', limit, this.#confirmReset.bind(this));
     // Return the active identity so the client can restore the caller's workspace.
-    app.get('/auth/me', this.authenticate, (_req, res) => res.json({ user: res.locals.user }));
+    app.get('/auth/me', this.authenticate, consume, (_req, res) => res.json({ user: res.locals.user }));
     app.post('/auth/logout', this.authenticate, this.#logout.bind(this));
   }
 

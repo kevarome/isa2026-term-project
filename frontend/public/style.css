@@ -53,6 +53,10 @@ button:disabled { opacity: .65; cursor: wait; }
 #notice:empty, #detail-notice:empty, #queue-state:empty { display: none; }
 #notice, #detail-notice { padding: .75rem 1rem; background: #e5f0e8; border-radius: .55rem; }
 #notice.error, #detail-notice.error { background: #fae7df; color: #822a17; }
+#api-allowance { padding: .6rem 1rem; background: #e5f0e8; border-radius: .55rem; }
+#api-limit-warning { display: block; color: #6f4619; }
+.admin-mode #api-allowance { margin: 0; border-radius: 0; }
+.usage-account-id { display: block; color: #4a6258; overflow-wrap: anywhere; }
 #ticket-hint { margin: -.4rem 0 0; font-size: .9rem; }
 .examples {
   display: flex; flex-wrap: wrap; gap: .45rem; margin: 1.25rem 0 0; padding: 0; border: 0;

@@ -260,7 +260,7 @@ test('persists all queues, staff changes, manual review and separate category st
   assert.deepEqual(byId.data.tickets.map(ticket => ticket.id), [submitted.billing.id]);
   assert.deepEqual((await request('/tickets', { user: 'stranger' })).data.tickets, []);
   const own = await request('/tickets', { user: 'owner' });
-  assert.equal(own.data.usage, 6);
+  assert.equal(own.data.submissions, 6);
   assert.equal(own.data.tickets.length, 6);
   assert(own.data.tickets.every(ticket => !Object.hasOwn(ticket, 'email')));
 
@@ -400,7 +400,7 @@ test('only administrators can delete tickets and accounts, and deletions update 
   assert.equal((await request('/tickets/' + ticket, { user: 'owner' })).status, 404);
   const customer = await request('/tickets', { user: 'owner' });
   assert.deepEqual(customer.data.tickets, []);
-  assert.equal(customer.data.usage, 1);
+  assert.equal(customer.data.submissions, 1);
 
   database.prepare("INSERT INTO password_resets(token_hash, user_id, expires_at) VALUES ('pending', 'staff', unixepoch() + 1800)").run();
   const removedUser = await remove(userPath, 'admin');
@@ -486,7 +486,7 @@ test('tracks API responses once with safe route names and restricts the report t
   for (const privateValue of [created.data.ticket.id, 'private-query', 'private-unknown-path', 'private-input', fixturePassword, samples[0].message]) {
     assert(!serialized.includes(privateValue));
   }
-  assert.equal((await request('/tickets', { user: 'owner' })).data.usage, 1);
+  assert.equal((await request('/tickets', { user: 'owner' })).data.submissions, 1);
   assert.equal((await request('/admin/users', { user: 'admin' })).data.totals.submissions, 1);
 });
 
@@ -501,8 +501,8 @@ test('reports UTC windows with empty days, preserves old submissions and average
   });
   database.exec(`
     INSERT INTO api_requests (user_id, method, route, status_code, duration_ms, created_at) VALUES
-      ('staff', 'GET', '/api/stats', 200, 20, datetime('now', '-2 days')),
-      ('staff', 'GET', '/api/stats', 500, 40, datetime('now', '-2 days'))
+      ('staff', 'GET', '/api/v1/stats', 200, 20, datetime('now', '-2 days')),
+      ('staff', 'GET', '/api/v1/stats', 500, 40, datetime('now', '-2 days'))
   `);
   const today = database.prepare("SELECT date('now') AS today, date('now', '-6 days') AS start").get();
   const seven = await request('/admin/usage', { user: 'admin' });
@@ -513,6 +513,7 @@ test('reports UTC windows with empty days, preserves old submissions and average
   assert.equal(seven.data.summary.requests, 3);
   assert.equal(seven.data.summary.errors, 1);
   assert.equal(seven.data.summary.activeUsers, 2);
+  assert.equal(seven.data.userTotals.find(row => row.email === emails.owner).requests, 3);
   assert.equal(seven.data.summary.avgDurationMs, 30);
   assert.equal(seven.data.daily.length, 7);
   assert.deepEqual(seven.data.daily.map(row => row.requests), [1, 0, 0, 0, 2, 0, 0]);
@@ -523,7 +524,7 @@ test('reports UTC windows with empty days, preserves old submissions and average
     const range = await request('/admin/usage?days=' + days, { user: 'admin' });
     assert.equal(range.status, 200);
     assert.equal(range.data.daily.length, days);
-    assert.equal(range.data.endpoints.find(row => row.route === '/api/tickets').requests, 2);
+    assert.equal(range.data.endpoints.find(row => row.route === '/api/v1/tickets').requests, 2);
     assert.equal(range.data.daily.reduce((sum, row) => sum + row.requests, 0), range.data.summary.requests);
   }
   for (const query of ['0', '365', 'seven', '7&days=30']) {
@@ -553,6 +554,39 @@ test('the first report on a fresh database has an empty, zero-filled range', asy
   assert.deepEqual(response.data.summary, { requests: 0, errors: 0, activeUsers: 0, avgDurationMs: null });
   assert.deepEqual(response.data.endpoints, []);
   assert.deepEqual(response.data.users, []);
+  assert.equal(response.data.endpointTotals.length, 17);
+  assert(response.data.endpointTotals.every(row => row.requests === 0 && row.errors === 0));
   assert.equal(response.data.daily.length, 30);
   assert(response.data.daily.every(day => day.requests === 0 && day.errors === 0));
+});
+
+test('counts concurrent functional calls once, warns after 20 and preserves the allowance across sign-ins', async t => {
+  const { request } = await withApp(t);
+  const used = response => Number(response.headers.get('x-api-calls-used'));
+  const credentials = { email: emails.owner, password: fixturePassword };
+  const login = await request('/auth/login', { payload: credentials });
+  assert.equal(login.headers.get('x-api-calls-used'), '0');
+  assert.equal(login.headers.get('x-api-free-limit'), '20');
+  await request('/tickets', { method: 'OPTIONS' });
+  await request('/auth/logout', { method: 'POST', token: login.headers.get('set-cookie').match(/ticketmaestro_session=([^;]+)/)[1] });
+  const reads = await Promise.all(Array.from({ length: 20 }, () => request('/tickets', { user: 'owner' })));
+  assert(reads.every(r => r.status === 200 && r.headers.get('x-api-free-exceeded') === 'false'));
+  assert(reads.every(r => r.data.usage === used(r) && r.data.submissions === 0));
+  assert.deepEqual(reads.map(used).sort((a, b) => a - b), Array.from({ length: 20 }, (_, i) => i + 1));
+  const create = await request('/tickets', { user: 'owner', payload: { message: samples[0].message } });
+  assert.equal(create.status, 201);
+  assert.equal(used(create), 21);
+  assert.equal(create.headers.get('x-api-free-exceeded'), 'true');
+  assert.equal(create.data.ticket.status, 'open');
+  const nextLogin = await request('/auth/login', { payload: credentials });
+  assert.equal(used(nextLogin), 21);
+  const report = await request('/admin/usage', { user: 'admin' });
+  const total = name => report.data.userTotals.find(row => row.email === emails[name]).requests;
+  assert.equal(total('owner'), 21);
+  assert.equal(total('stranger'), 0);
+  assert.equal(total('admin'), 1);
+  const endpoint = (method, route) => report.data.endpointTotals.find(row => row.method === method && row.route === route);
+  assert.equal(endpoint('GET', '/api/v1/tickets').requests, 20);
+  assert.equal(endpoint('POST', '/api/v1/auth/login').requests, 2);
+  assert.equal(endpoint('DELETE', '/api/v1/admin/tickets/:id').requests, 0);
 });

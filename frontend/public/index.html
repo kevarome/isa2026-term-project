@@ -18,6 +18,10 @@
   </header>
   <main>
     <p id="notice" role="status"></p>
+    <p id="api-allowance" role="status" hidden>
+      API calls used <strong id="api-calls-used"></strong> · Free calls remaining <strong id="api-calls-remaining"></strong>
+      <strong id="api-limit-warning" hidden>Your free allowance is exhausted. You can continue using the service.</strong>
+    </p>
     <!-- The access card alternates between sign-in, account creation, and the two password recovery steps. -->
     <section id="access" class="access" hidden>
       <div class="intro">
@@ -150,23 +154,24 @@
           </section>
           <div class="report-tables">
             <section class="report-card" aria-labelledby="endpoints-title">
-              <div class="report-heading"><h2 id="endpoints-title">Endpoints</h2></div>
+              <div class="report-heading"><h2 id="endpoints-title">API endpoint statistics</h2></div>
               <div class="table-wrap"><table>
-                <thead><tr><th scope="col">Endpoint</th><th scope="col">Requests</th><th scope="col">Errors</th></tr></thead>
+                <thead><tr><th scope="col">Endpoint</th><th scope="col">All-time requests</th><th scope="col">Period requests</th><th scope="col">Period errors</th></tr></thead>
                 <tbody id="usage-endpoints"></tbody>
               </table></div>
               <button type="button" id="expand-endpoints" class="table-action" hidden>Show all endpoints</button>
             </section>
             <section class="report-card" aria-labelledby="callers-title">
-              <div class="report-heading"><h2 id="callers-title">Top callers</h2></div>
+              <div class="report-heading"><h2 id="callers-title">User API consumption</h2></div>
               <div class="table-wrap"><table>
-                <thead><tr><th scope="col">Account</th><th scope="col">Requests</th><th scope="col">Errors</th></tr></thead>
+                <thead><tr><th scope="col">Account</th><th scope="col">All-time counted calls</th><th scope="col">Period requests</th><th scope="col">Period errors</th></tr></thead>
                 <tbody id="usage-callers"></tbody>
               </table></div>
             </section>
           </div>
           <details class="report-help"><summary>How usage is counted</summary>
-            <p>Each completed API call counts once, including refreshes of this report. Browser preflight checks are excluded. Errors are HTTP 4xx and 5xx responses. Top callers shows up to ten identified accounts.</p>
+            <p>Each account receives 20 free calls. Ticket actions, profile reads, queue statistics, and administrator requests count toward the allowance. Registration, sign-in, sign-out, password recovery, health checks, documentation, and browser preflight checks are excluded. Service continues after the allowance is used.</p>
+            <p>Period requests and endpoint totals include completed authentication requests. Errors are HTTP 4xx and 5xx responses. A report refresh appears in endpoint traffic on the following refresh.</p>
             <p>Before full tracking began, only successful ticket submissions were recorded. Those requests count toward volume. Average processing time uses requests with a recorded duration.</p>
           </details>
         </div>

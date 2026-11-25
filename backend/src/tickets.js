@@ -116,7 +116,7 @@ export class TicketController {
       ORDER BY ${orderColumns.map(column => column + ' DESC').join(', ')}
       LIMIT ?
     `).bind(...values, pageSize + 1);
-    const [result, usage] = staff
+    const [result, submissions] = staff
       ? [await query.all()]
       : await this.db.batch([
           query,
@@ -128,7 +128,11 @@ export class TicketController {
       next = page.at(-1).nextCursor(sort, legacy);
     }
     const response = { tickets: page.map(ticket => ticket.toResponse(staff)), next };
-    if (usage) response.usage = usage.results[0].count;
+    if (submissions) {
+      response.submissions = submissions.results[0].count;
+      // Clients on the original /api route read the submission count from usage.
+      response.usage = req.baseUrl === '/api' ? response.submissions : res.locals.callsUsed;
+    }
     res.json(response);
   }
 

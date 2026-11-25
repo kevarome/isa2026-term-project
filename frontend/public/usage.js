@@ -77,13 +77,12 @@ function renderChart(days) {
   select(days.length - 1);
 }
 
-// Replace a usage table?s rows. Use the caller?s label renderer for the first cell and format the
-// request and error counts consistently.
-function renderTable(body, data, label, emptyMessage) {
+// Show each lifetime total alongside requests and errors for the selected period.
+function renderTable(body, data, label, periodEntry, emptyMessage) {
   body.replaceChildren();
   if (data.length === 0) {
     const cell = body.insertRow().insertCell();
-    cell.colSpan = 3;
+    cell.colSpan = 4;
     cell.textContent = emptyMessage;
     return;
   }
@@ -91,13 +90,15 @@ function renderTable(body, data, label, emptyMessage) {
     const row = body.insertRow();
     row.insertCell().append(...label(entry));
     row.insertCell().textContent = number.format(entry.requests);
-    row.insertCell().textContent = number.format(entry.errors);
+    const activity = periodEntry(entry);
+    row.insertCell().textContent = number.format(activity?.requests ?? 0);
+    row.insertCell().textContent = number.format(activity?.errors ?? 0);
   }
 }
 
 // Populate the totals, traffic chart, endpoint table, and identified callers from one API response.
 function render(report) {
-  const { from, to, summary, daily, endpoints, users } = report;
+  const { from, to, summary, daily, endpoints, users, endpointTotals, userTotals } = report;
   $('usage-dates').textContent = fullDate.formatRange(date(from), date(to)) + ' · UTC';
   $('metric-requests').textContent = number.format(summary.requests);
   $('metric-error-rate').textContent = summary.requests ? percentage.format(summary.errors / summary.requests) : '—';
@@ -105,19 +106,25 @@ function render(report) {
   $('metric-duration').textContent = summary.avgDurationMs === null ? '—' : number.format(summary.avgDurationMs) + ' ms';
   $('metric-users').textContent = number.format(summary.activeUsers);
   renderChart(daily);
+  const endpointKey = entry => entry.method + ' ' + entry.route;
+  const periodEndpoints = new Map(endpoints.map(entry => [endpointKey(entry), entry]));
+  const periodUsers = new Map(users.map(entry => [entry.email, entry]));
   const more = $('expand-endpoints');
   // Switch between the first five endpoints and the full list while keeping the accessible expanded
   // state in sync.
   function showEndpoints(expanded) {
-    renderTable($('usage-endpoints'), expanded ? endpoints : endpoints.slice(0, 5),
-      entry => [textSpan(entry.method, 'method'), textSpan(entry.route, 'route')], messages.noActivity);
-    more.textContent = expanded ? messages.showFewer : messages.showEndpoints(endpoints.length);
+    renderTable($('usage-endpoints'), expanded ? endpointTotals : endpointTotals.slice(0, 5),
+      entry => [textSpan(entry.method, 'method'), textSpan(entry.route, 'route')],
+      entry => periodEndpoints.get(endpointKey(entry)), messages.noActivity);
+    more.textContent = expanded ? messages.showFewer : messages.showEndpoints(endpointTotals.length);
     more.setAttribute('aria-expanded', String(expanded));
   }
   showEndpoints(false);
-  more.hidden = endpoints.length <= 5;
+  more.hidden = endpointTotals.length <= 5;
   more.onclick = () => showEndpoints(more.getAttribute('aria-expanded') !== 'true');
-  renderTable($('usage-callers'), users, entry => [entry.email], messages.noCallers);
+  renderTable($('usage-callers'), userTotals,
+    entry => [entry.email, textSpan(entry.id, 'usage-account-id')],
+    entry => periodUsers.get(entry.email), messages.noCallers);
 }
 
 // Owns the active report and ignores responses from a previous page or reporting period.

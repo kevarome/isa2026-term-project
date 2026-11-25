@@ -3,11 +3,13 @@ import { messages } from './messages.js';
 export class ApiClient {
   #origin;
   #onSessionExpired;
+  #onUsage;
   #revision = 0;
 
-  constructor(origin, onSessionExpired) {
+  constructor(origin, onSessionExpired, onUsage) {
     this.#origin = origin;
     this.#onSessionExpired = onSessionExpired;
+    this.#onUsage = onUsage;
   }
 
   // A local revision lets views discard late responses after login or logout.
@@ -31,6 +33,7 @@ export class ApiClient {
       this.changeSession();
       this.#onSessionExpired();
     }
+    if (revision === this.#revision) this.#onUsage?.(response.headers);
     const result = await response.json().catch(() => null);
     if (!response.ok || !result) {
       throw Object.assign(new Error(result?.error || messages.requestFailed), { status: response.status });

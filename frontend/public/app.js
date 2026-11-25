@@ -5,6 +5,7 @@ import { API_ORIGIN } from './config.js';
 import { ApiClient } from './api-client.js';
 import { CustomerTicketList } from './customer-ticket-list.js';
 import { UsageReport } from './usage.js';
+import { showAllowance } from './allowance.js';
 
 const $ = id => document.getElementById(id);
 $('api-reference').href = API_ORIGIN + '/doc/';
@@ -30,7 +31,7 @@ let saving = false;
 let adminId = null;
 let userRequest = 0;
 let deleteTarget = null;
-const client = new ApiClient(API_ORIGIN, () => show('access'));
+const client = new ApiClient(API_ORIGIN, () => show('access'), showAllowance);
 const usageReport = new UsageReport(client);
 const customerTickets = new CustomerTicketList(client, ticket => ticketRow(ticket, false));
 
@@ -59,6 +60,7 @@ function detailNotice(message = '', error = false) {
 // Switch between the access, customer, and support views. Clear administrator data and close its delete
 // dialog when leaving admin mode.
 function show(view, admin = false) {
+  if (view === 'access') showAllowance(null);
   for (const id of ['access', 'customer', 'staff']) $(id).hidden = id !== view;
   document.body.classList.toggle('admin-mode', admin);
   $('admin-sidebar').hidden = !admin;
@@ -213,7 +215,8 @@ async function loadQueue(filters = queueFilters, cursor = null) {
   $('apply-filters').disabled = true;
   $('more-tickets').disabled = true;
   try {
-    const { tickets, next } = await client.request('/tickets?' + query);
+    const endpoint = adminId ? '/admin/tickets' : '/tickets';
+    const { tickets, next } = await client.request(endpoint + '?' + query);
     if (!isCurrent()) return;
     const list = $('queue-tickets');
     if (!cursor) list.replaceChildren();
