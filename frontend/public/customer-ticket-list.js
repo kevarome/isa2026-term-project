@@ -31,11 +31,11 @@ export class CustomerTicketList {
   }
 
   // Replace the history on refresh or append results for a supplied cursor. Ignore stale responses by
-  // checking both the request number and the session token.
+  // checking both the request number and the session revision.
   async load(cursor = null) {
     const request = ++this.#request;
-    const token = this.#client.token;
-    const isCurrent = () => request === this.#request && token === this.#client.token;
+    const revision = this.#client.sessionRevision;
+    const isCurrent = () => request === this.#request && revision === this.#client.sessionRevision;
     this.#usage.textContent = messages.loadingTickets;
     this.#refresh.disabled = true;
     this.#more.disabled = true;

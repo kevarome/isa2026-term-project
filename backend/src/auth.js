@@ -2,7 +2,8 @@ import { messages } from './messages.js';
 import { hashPassword, verifyPassword } from './password.js';
 import { resetDelivery, resetLinkMinutes } from './reset-delivery.js';
 
-const SESSION_SECONDS = 8 * 60 * 60;
+import { sessionCookieName, sessionCookieOptions, sessionSeconds, signSession, verifySession } from './session.js';
+
 const demoEmails = [
   'john@john.com', 'admin@admin.com',
   'billing@example.test', 'technical@example.test', 'account@example.test', 'general@example.test'
@@ -70,18 +71,21 @@ export class AuthController {
     next();
   }
 
-  // Resolve a bearer token to an active D1 session and read the user's current role.
+  // Verify the signed cookie and read the user's current role from its active D1 session.
   // Place the public identity and token digest in res.locals for downstream handlers.
   authenticate = async (req, res, next) => {
-    const token = req.get('Authorization')?.match(/^Bearer ([a-f0-9]{64})$/i)?.[1];
-    const tokenHash = token && await digest(token);
+    const cookie = req.get('Cookie')?.split(';').map(value => value.trim())
+      .find(value => value.startsWith(sessionCookieName + '='));
+    const token = cookie?.slice(sessionCookieName.length + 1);
+    const subject = await verifySession(token, this.#env.JWT_SECRET);
+    const tokenHash = subject && await digest(token);
     const user = tokenHash && await this.#db.prepare(`
       SELECT u.id, u.email, ${roleColumn}, staff.department
       FROM sessions s
       JOIN users u ON u.id = s.user_id
       LEFT JOIN staff_profiles staff ON staff.user_id = u.id
-      WHERE s.token_hash = ? AND s.expires_at > unixepoch()
-    `).bind(tokenHash).first();
+      WHERE s.token_hash = ? AND s.user_id = ? AND s.expires_at > unixepoch()
+    `).bind(tokenHash, subject).first();
     if (!user) return res.status(401).json({ error: messages.signInRequired });
     res.locals.user = identity(user);
     res.locals.tokenHash = tokenHash;
@@ -134,18 +138,19 @@ export class AuthController {
     const valid = await verifyPassword(password, record?.password_hash ?? 'unused-salt:' + '0'.repeat(128));
     if (!record || !valid) return res.status(401).json({ error: messages.invalidCredentials });
 
-    const token = newToken();
+    const token = await signSession(record.id, this.#env.JWT_SECRET);
     const [, session] = await this.#db.batch([
       this.#db.prepare('DELETE FROM sessions WHERE expires_at <= unixepoch()'),
       this.#db.prepare(`
         INSERT INTO sessions (token_hash, user_id, expires_at)
         SELECT ?, id, unixepoch() + ? FROM users WHERE id = ? AND password_hash = ?
         RETURNING user_id
-      `).bind(await digest(token), SESSION_SECONDS, record.id, record.password_hash)
+      `).bind(await digest(token), sessionSeconds, record.id, record.password_hash)
     ]);
     if (!session.results.length) return res.status(401).json({ error: messages.invalidCredentials });
     res.locals.user = identity(record);
-    res.json({ token, user: res.locals.user });
+    res.cookie(sessionCookieName, token, { ...sessionCookieOptions(this.#env.CLIENT_ORIGIN), maxAge: sessionSeconds * 1000 });
+    res.json({ user: res.locals.user });
   }
 
   // Issue a short-lived reset token when an eligible account exists and is outside the cooldown.
@@ -203,6 +208,7 @@ export class AuthController {
   // Delete the session matching the caller's token digest and confirm sign-out.
   async #logout(_req, res) {
     await this.#db.prepare('DELETE FROM sessions WHERE token_hash = ?').bind(res.locals.tokenHash).run();
+    res.clearCookie(sessionCookieName, sessionCookieOptions(this.#env.CLIENT_ORIGIN));
     res.json({ signedOut: true });
   }
 }

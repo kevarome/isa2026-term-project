@@ -22,14 +22,20 @@ export function createApp(env, waitUntil) {
   app.use((req, res, next) => {
     res.set('Cache-Control', 'no-store').vary('Origin');
     const origin = req.get('Origin');
-    if (origin && origin !== env.CLIENT_ORIGIN) {
+    // Swagger UI runs on the API's own origin. Browser requests from the client
+    // use its exact configured origin. Reject cross-site writes lacking an Origin.
+    const apiHost = req.get('Host');
+    const sameOrigin = origin === 'https://' + apiHost || (req.protocol === 'http' && origin === 'http://' + apiHost);
+    if ((origin && origin !== env.CLIENT_ORIGIN && !sameOrigin) ||
+        (!origin && req.get('Sec-Fetch-Site') === 'cross-site' && !['GET', 'HEAD', 'OPTIONS'].includes(req.method))) {
       return res.status(403).json({ error: messages.originDenied });
     }
     if (origin) {
       res.set({
         'Access-Control-Allow-Origin': origin,
         'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers': 'Authorization, Content-Type'
+        'Access-Control-Allow-Headers': 'Content-Type',
+        'Access-Control-Allow-Credentials': 'true'
       });
     }
     if (req.method === 'OPTIONS') return res.sendStatus(204);

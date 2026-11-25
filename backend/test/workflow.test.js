@@ -6,9 +6,11 @@ import { test } from 'node:test';
 import { fixtureResponse, syntheticTickets } from '../fixtures/synthetic-tickets.js';
 import { createApp } from '../src/app.js';
 import { hashPassword } from '../src/password.js';
+import { signSession } from '../src/session.js';
 
 const origin = 'http://localhost:8788';
 const fixturePassword = 'synthetic-test-password';
+const jwtSecret = randomUUID() + randomUUID();
 const fixtureHash = await hashPassword(fixturePassword);
 const roles = { owner: 'user', stranger: 'user', staff: 'user', admin: 'admin' };
 const emails = Object.fromEntries(Object.keys(roles).map(name => [name, name + '@example.test']));
@@ -62,7 +64,7 @@ async function withApp(t, seedLegacy, waitUntil) {
       const addUser = database.prepare('INSERT INTO users (id, email, password_hash, role) VALUES (?, ?, ?, ?)');
       const addSession = database.prepare('INSERT INTO sessions VALUES (?, ?, unixepoch() + 3600)');
       for (const [name, role] of Object.entries(roles)) {
-        tokens[name] = createHash('sha256').update('token-for-' + name).digest('hex');
+        tokens[name] = await signSession(name, jwtSecret);
         const tokenHash = createHash('sha256').update(tokens[name]).digest('hex');
         addUser.run(name, emails[name], fixtureHash, role);
         addSession.run(tokenHash, name);
@@ -74,6 +76,7 @@ async function withApp(t, seedLegacy, waitUntil) {
   let calls = 0;
   const env = {
     DB: asD1(database, controls),
+    JWT_SECRET: jwtSecret,
     CLIENT_ORIGIN: origin,
     AUTH_LIMIT: { limit: async () => ({ success: true }) },
     TICKET_LIMIT: { limit: async () => ({ success: true }) },
@@ -92,7 +95,7 @@ async function withApp(t, seedLegacy, waitUntil) {
   async function request(path, { user, token, method, payload, raw, requestOrigin = origin } = {}) {
     const headers = { Origin: requestOrigin };
     const credential = token ?? tokens[user];
-    if (credential) headers.Authorization = 'Bearer ' + credential;
+    if (credential) headers.Cookie = 'ticketmaestro_session=' + credential;
     if (payload !== undefined || raw !== undefined) headers['Content-Type'] = 'application/json';
     const result = await fetch(base + path, {
       method: method ?? (payload === undefined && raw === undefined ? 'GET' : 'POST'),
@@ -183,6 +186,7 @@ test('validates requests, protects roles and never forwards invalid ticket conte
   const preflight = await request('/tickets', { method: 'OPTIONS' });
   assert.equal(preflight.status, 204);
   assert.equal(preflight.headers.get('access-control-allow-origin'), origin);
+  assert.equal(preflight.headers.get('access-control-allow-credentials'), 'true');
   assert.match(preflight.headers.get('access-control-allow-methods'), /PATCH/);
 
   const register = await request('/auth/register', {
@@ -199,10 +203,16 @@ test('validates requests, protects roles and never forwards invalid ticket conte
   assert.equal(login.status, 200);
   assert.equal(login.data.user.role, 'staff');
   assert.equal(login.data.user.department, 'technical');
-  const me = await request('/auth/me', { token: login.data.token });
+  assert.equal(Object.hasOwn(login.data, 'token'), false);
+  const cookie = login.headers.get('set-cookie');
+  assert.match(cookie, /;\s*HttpOnly\b/i);
+  const token = cookie.match(/ticketmaestro_session=([^;]+)/)[1];
+  const me = await request('/auth/me', { token });
   assert.equal(me.data.user.role, 'staff');
-  assert.equal((await request('/auth/logout', { token: login.data.token, method: 'POST' })).status, 200);
-  assert.equal((await request('/auth/me', { token: login.data.token })).status, 401);
+  const logout = await request('/auth/logout', { token, method: 'POST' });
+  assert.equal(logout.status, 200);
+  assert.match(logout.headers.get('set-cookie'), /ticketmaestro_session=;/);
+  assert.equal((await request('/auth/me', { token })).status, 401);
 
   assert.equal((await request('/tickets')).status, 401);
   assert.equal((await request('/tickets', { user: 'owner', raw: '{"message"' })).status, 400);

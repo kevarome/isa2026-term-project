@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "TicketMaestro end-to-end",
-    "description": "Run against a local or dedicated synthetic-data environment. Set customerEmail, customerPassword, staffEmail and staffPassword to existing accounts. The collection submits and updates one fictional support ticket and captures its ID and current version. With live inference enabled, inspect the original model, department, and urgency in the staff ticket response. Use GET /api/v1/stats to check aggregate results.",
+    "description": "Run against a local or dedicated synthetic-data environment. Set customerEmail, customerPassword, staffEmail and staffPassword to existing accounts. The collection submits and updates one fictional support ticket and captures its ID and current version. With live inference enabled, inspect the original model, department, and urgency in the staff ticket response. Use GET /api/v1/stats to check aggregate results. Enable the Postman cookie jar for the API host. Each sign-in sets the HttpOnly session cookie used by subsequent requests.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -23,14 +23,6 @@
     },
     {
       "key": "staffPassword",
-      "value": ""
-    },
-    {
-      "key": "customerToken",
-      "value": ""
-    },
-    {
-      "key": "staffToken",
       "value": ""
     },
     {
@@ -93,7 +85,7 @@
               "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
               "const result = pm.response.json();",
               "pm.test(\"Customer account\", () => pm.expect(result.user.role).to.eql(\"user\"));",
-              "pm.collectionVariables.set(\"customerToken\", result.token);"
+              "pm.test(\"HttpOnly session issued\", () => pm.expect(pm.response.headers.get(\"Set-Cookie\")).to.match(/ticketmaestro_session=.*HttpOnly/i));"
             ]
           }
         }
@@ -114,10 +106,6 @@
           }
         },
         "header": [
-          {
-            "key": "Authorization",
-            "value": "Bearer {{customerToken}}"
-          },
           {
             "key": "Content-Type",
             "value": "application/json"
@@ -144,12 +132,7 @@
       "request": {
         "method": "GET",
         "url": "{{baseUrl}}/tickets/{{ticketId}}",
-        "header": [
-          {
-            "key": "Authorization",
-            "value": "Bearer {{customerToken}}"
-          }
-        ]
+        "header": []
       },
       "event": [
         {
@@ -159,6 +142,25 @@
             "exec": [
               "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
               "pm.test(\"Ticket has the expected ID\", () => pm.expect(pm.response.json().ticket.id).to.eql(pm.collectionVariables.get(\"ticketId\")));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Customer sign-out",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/auth/logout",
+        "header": []
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
             ]
           }
         }
@@ -194,7 +196,7 @@
               "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
               "const result = pm.response.json();",
               "pm.test(\"Staff access\", () => pm.expect(result.user.role).to.be.oneOf([\"staff\", \"admin\"]));",
-              "pm.collectionVariables.set(\"staffToken\", result.token);"
+              "pm.test(\"HttpOnly session issued\", () => pm.expect(pm.response.headers.get(\"Set-Cookie\")).to.match(/ticketmaestro_session=.*HttpOnly/i));"
             ]
           }
         }
@@ -205,12 +207,7 @@
       "request": {
         "method": "GET",
         "url": "{{baseUrl}}/tickets?q={{ticketId}}&sort=priority",
-        "header": [
-          {
-            "key": "Authorization",
-            "value": "Bearer {{staffToken}}"
-          }
-        ]
+        "header": []
       },
       "event": [
         {
@@ -231,12 +228,7 @@
       "request": {
         "method": "GET",
         "url": "{{baseUrl}}/tickets/{{ticketId}}",
-        "header": [
-          {
-            "key": "Authorization",
-            "value": "Bearer {{staffToken}}"
-          }
-        ]
+        "header": []
       },
       "event": [
         {
@@ -269,10 +261,6 @@
         },
         "header": [
           {
-            "key": "Authorization",
-            "value": "Bearer {{staffToken}}"
-          },
-          {
             "key": "Content-Type",
             "value": "application/json"
           }
@@ -301,12 +289,7 @@
       "request": {
         "method": "GET",
         "url": "{{baseUrl}}/stats",
-        "header": [
-          {
-            "key": "Authorization",
-            "value": "Bearer {{staffToken}}"
-          }
-        ]
+        "header": []
       },
       "event": [
         {
@@ -323,41 +306,11 @@
       ]
     },
     {
-      "name": "Customer sign-out",
-      "request": {
-        "method": "POST",
-        "url": "{{baseUrl}}/auth/logout",
-        "header": [
-          {
-            "key": "Authorization",
-            "value": "Bearer {{customerToken}}"
-          }
-        ]
-      },
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
-              "pm.collectionVariables.unset(\"customerToken\");"
-            ]
-          }
-        }
-      ]
-    },
-    {
       "name": "Staff sign-out",
       "request": {
         "method": "POST",
         "url": "{{baseUrl}}/auth/logout",
-        "header": [
-          {
-            "key": "Authorization",
-            "value": "Bearer {{staffToken}}"
-          }
-        ]
+        "header": []
       },
       "event": [
         {
@@ -365,8 +318,7 @@
           "script": {
             "type": "text/javascript",
             "exec": [
-              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
-              "pm.collectionVariables.unset(\"staffToken\");"
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
             ]
           }
         }

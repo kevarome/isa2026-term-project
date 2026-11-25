@@ -165,10 +165,10 @@ function ticketRow(ticket, staff) {
 // Fetch one page of registered accounts. Ignore responses from replaced sessions or newer requests, and
 // keep the signed-in admin out of the removal controls.
 async function loadUsers(cursor = null) {
-  const requestToken = client.token;
+  const sessionRevision = client.sessionRevision;
   const request = ++userRequest;
   const data = await client.request('/admin/users' + (cursor ? '?after=' + encodeURIComponent(cursor) : ''));
-  if (requestToken !== client.token || request !== userRequest || !adminId) return;
+  if (sessionRevision !== client.sessionRevision || request !== userRequest || !adminId) return;
   if (!cursor) $('users').replaceChildren();
   for (const user of data.users) {
     const row = $('users').insertRow();
@@ -205,8 +205,8 @@ async function loadQueue(filters = queueFilters, cursor = null) {
   const query = new URLSearchParams(filters);
   if (cursor) query.set('after', cursor);
   const request = ++queueRequest;
-  const requestToken = client.token;
-  const isCurrent = () => request === queueRequest && requestToken === client.token;
+  const sessionRevision = client.sessionRevision;
+  const isCurrent = () => request === queueRequest && sessionRevision === client.sessionRevision;
   $('queue-state').textContent = messages.loadingTickets;
   $('apply-filters').disabled = true;
   $('more-tickets').disabled = true;
@@ -245,10 +245,10 @@ function labeledValue(term, value) {
 // Fetch the counts for the support dashboard and render each grouping. Only update the dashboard for
 // the session that started the request.
 async function loadStats() {
-  const requestToken = client.token;
+  const sessionRevision = client.sessionRevision;
   try {
     const stats = await client.request('/stats');
-    if (requestToken !== client.token) return;
+    if (sessionRevision !== client.sessionRevision) return;
     $('stats-total').textContent = messages.ticketCount(stats.total);
     const groups = [
       [messages.department, stats.byDepartment],
@@ -264,7 +264,7 @@ async function loadStats() {
       return group;
     }));
   } catch (error) {
-    if (requestToken === client.token) $('stats-total').textContent = messages.statsUnavailable;
+    if (sessionRevision === client.sessionRevision) $('stats-total').textContent = messages.statsUnavailable;
     throw error;
   }
 }
@@ -429,7 +429,7 @@ $('reset-back').onclick = () => {
   notify();
 };
 
-// Register or sign in through the API. Store the token after a successful login and clear the password
+// Register or sign in through the API. Update the session revision on login and clear the password
 // after every attempt.
 accessForm.onsubmit = event => {
   event.preventDefault();
@@ -445,7 +445,7 @@ accessForm.onsubmit = event => {
         return;
       }
       const result = await client.request('/auth/login', credentials);
-      client.token = result.token;
+      client.changeSession();
       await openWorkspace(result.user);
     } finally {
       accessForm.elements.password.value = '';
@@ -484,7 +484,7 @@ resetPasswordForm.onsubmit = event => {
     $('reset-back').disabled = true;
     try {
       await client.request('/auth/password-reset/confirm', { token: resetToken, password: password.value });
-      client.token = null;
+      client.changeSession();
       setAccessMode('login');
       accessForm.elements.email.focus();
       notify(messages.passwordUpdated);
@@ -508,13 +508,13 @@ ticketForm.onsubmit = event => {
   event.preventDefault();
   void run(async () => {
     const message = ticketForm.elements.message;
-    const requestToken = client.token;
+    const sessionRevision = client.sessionRevision;
     message.readOnly = true;
     $('ticket-examples').disabled = true;
     notify(messages.submitting);
     try {
       const { ticket } = await client.request('/tickets', { message: message.value });
-      if (requestToken !== client.token) return;
+      if (sessionRevision !== client.sessionRevision) return;
       ticketForm.reset();
       const confirmation = ticket.status === 'manual_review'
         ? messages.queuedForReview
@@ -545,7 +545,7 @@ function confirmDeletion(collection, record) {
   if (!adminId || deleteDialog.open) return;
   const user = collection === 'users';
   const action = user ? messages.removeUser : messages.deleteTicket;
-  deleteTarget = { collection, id: record.id, session: client.token };
+  deleteTarget = { collection, id: record.id, session: client.sessionRevision };
   $('delete-title').textContent = action + '?';
   $('delete-confirm').textContent = action;
   $('delete-message').textContent = user
@@ -571,7 +571,7 @@ deleteDialog.querySelector('form').onsubmit = async event => {
   if (event.submitter !== $('delete-confirm')) return;
   event.preventDefault();
   const target = deleteTarget;
-  if (!target || !adminId || target.session !== client.token || $('delete-confirm').disabled) return;
+  if (!target || !adminId || target.session !== client.sessionRevision || $('delete-confirm').disabled) return;
   $('delete-confirm').disabled = true;
   $('delete-cancel').disabled = true;
   $('delete-error').textContent = '';
@@ -580,7 +580,7 @@ deleteDialog.querySelector('form').onsubmit = async event => {
   try {
     await client.request(`/admin/${target.collection}/${encodeURIComponent(target.id)}`, undefined, 'DELETE');
   } catch (error) {
-    if (target.session !== client.token) return;
+    if (target.session !== client.sessionRevision) return;
     if (error.status !== 404) {
       $('delete-error').textContent = errorMessage(error);
       return;
@@ -590,7 +590,7 @@ deleteDialog.querySelector('form').onsubmit = async event => {
     $('delete-confirm').disabled = false;
     $('delete-cancel').disabled = false;
   }
-  if (target.session !== client.token || !adminId) return;
+  if (target.session !== client.sessionRevision || !adminId) return;
   deleteDialog.close();
   if (!user && detailDialog.open && target.id === activeDetail?.id) detailDialog.close();
   if (user) $('staff-title').focus();
@@ -598,7 +598,7 @@ deleteDialog.querySelector('form').onsubmit = async event => {
   try {
     await openAdminPage();
   } catch (error) {
-    if (target.session === client.token) notify(`${message} ${errorMessage(error)}`, true);
+    if (target.session === client.sessionRevision) notify(`${message} ${errorMessage(error)}`, true);
   }
 };
 
@@ -623,7 +623,7 @@ editForm.onsubmit = async event => {
   }
   const path = '/tickets/' + encodeURIComponent(detail.id);
   const isCurrent = () => activeDetail === detail && detailDialog.open;
-  const requestToken = client.token;
+  const sessionRevision = client.sessionRevision;
   saving = true;
   $('delete-ticket').disabled = true;
   $('edit-save').disabled = true;
@@ -635,7 +635,7 @@ editForm.onsubmit = async event => {
       renderDetail(detail, ticket);
       detailNotice(messages.updated);
     }
-    if (requestToken === client.token) {
+    if (sessionRevision === client.sessionRevision) {
       try {
         await Promise.all([loadQueue(), loadStats()]);
       } catch {
@@ -680,25 +680,20 @@ $('more-tickets').onclick = () => void run(() => loadQueue(queueFilters, nextQue
 window.addEventListener('hashchange', () => {
   if (!openResetLink() && document.body.classList.contains('admin-mode')) void run(() => openAdminPage(true));
 });
-// End the server session and clear the stored token before returning to sign-in.
+// Revoke the cookie session before returning to sign-in.
 $('logout').onclick = () => void run(async () => {
   await client.request('/auth/logout', {});
-  client.token = null;
+  client.changeSession();
   ticketForm.reset();
   show('access');
 }, $('logout'));
 
-// At startup, handle a recovery link first. Otherwise, validate any stored session before opening its
-// workspace.
+// An HttpOnly session can only be checked by the API.
 if (!openResetLink()) {
-  if (client.token) {
-    try {
-      await openWorkspace((await client.request('/auth/me')).user);
-    } catch (error) {
-      if ($('staff').hidden && $('customer').hidden) show('access');
-      notify(errorMessage(error), true);
-    }
-  } else {
-    show('access');
+  try {
+    await openWorkspace((await client.request('/auth/me')).user);
+  } catch (error) {
+    if ($('staff').hidden && $('customer').hidden) show('access');
+    if (error.status !== 401) notify(errorMessage(error), true);
   }
 }
