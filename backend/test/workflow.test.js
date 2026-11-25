@@ -88,7 +88,7 @@ async function withApp(t, seedLegacy, waitUntil) {
   const server = createApp(env, waitUntil).listen(0, '127.0.0.1');
   await new Promise((resolve, reject) => server.once('listening', resolve).once('error', reject));
   t.after(() => new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve())));
-  const base = 'http://127.0.0.1:' + server.address().port + '/api';
+  const base = 'http://127.0.0.1:' + server.address().port + '/api/v1';
   async function request(path, { user, token, method, payload, raw, requestOrigin = origin } = {}) {
     const headers = { Origin: requestOrigin };
     const credential = token ?? tokens[user];
@@ -402,7 +402,7 @@ test('only administrators can delete tickets and accounts, and deletions update 
   for (const table of ['sessions', 'password_resets', 'staff_profiles', 'api_usage', 'api_requests']) {
     assert.equal(database.prepare(`SELECT COUNT(*) AS count FROM ${table} WHERE user_id = 'staff'`).get().count, 0);
   }
-  assert.equal(database.prepare("SELECT COUNT(*) AS count FROM api_requests WHERE route = '/api/tickets' AND method = 'POST' AND user_id IS NULL").get().count, 1);
+  assert.equal(database.prepare("SELECT COUNT(*) AS count FROM api_requests WHERE route = '/api/v1/tickets' AND method = 'POST' AND user_id IS NULL").get().count, 1);
   const users = await request('/admin/users', { user: 'admin' });
   assert.equal(users.data.users.some(user => user.id === 'staff'), false);
   assert.deepEqual(users.data.totals, { users: 3, submissions: 2 });
@@ -462,7 +462,7 @@ test('tracks API responses once with safe route names and restricts the report t
   assert.equal(daily.reduce((sum, day) => sum + day.requests, 0), summary.requests);
   assert.equal(daily.reduce((sum, day) => sum + day.errors, 0), summary.errors);
   assert.equal(endpoints.reduce((sum, endpoint) => sum + endpoint.requests, 0), summary.requests);
-  const details = endpoints.find(item => item.method === 'GET' && item.route === '/api/tickets/:id');
+  const details = endpoints.find(item => item.method === 'GET' && item.route === '/api/v1/tickets/:id');
   assert.equal(details.requests, 2);
   assert.equal(details.errors, 1);
   const customer = users.find(item => item.email === emails.owner);

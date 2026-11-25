@@ -41,7 +41,7 @@ export class ApiUsage {
       ).bind(
         res.locals.user?.id ?? null,
         methods.has(req.method) ? req.method : 'OTHER',
-        req.route?.path ?? '(unrouted)',
+        req.route ? req.baseUrl + req.route.path : '(unrouted)',
         res.statusCode,
         Math.max(0, Math.round(performance.now() - started))
       ).run();

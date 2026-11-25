@@ -35,7 +35,7 @@ export class ApiClient {
     const requestToken = this.token;
     if (requestToken) headers.Authorization = 'Bearer ' + requestToken;
     if (body !== undefined) headers['Content-Type'] = 'application/json';
-    const response = await fetch(this.#origin + '/api' + path, {
+    const response = await fetch(this.#origin + '/api/v1' + path, {
       method,
       headers,
       body: body === undefined ? undefined : JSON.stringify(body)

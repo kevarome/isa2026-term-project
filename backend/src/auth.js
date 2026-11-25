@@ -51,13 +51,13 @@ export class AuthController {
   // Install the rate-limited public endpoints and protect the two active-session endpoints.
   registerRoutes(app) {
     const limit = this.#limit.bind(this);
-    app.post('/api/auth/register', limit, this.#register.bind(this));
-    app.post('/api/auth/login', limit, this.#login.bind(this));
-    app.post('/api/auth/password-reset/request', limit, this.#requestReset.bind(this));
-    app.post('/api/auth/password-reset/confirm', limit, this.#confirmReset.bind(this));
+    app.post('/auth/register', limit, this.#register.bind(this));
+    app.post('/auth/login', limit, this.#login.bind(this));
+    app.post('/auth/password-reset/request', limit, this.#requestReset.bind(this));
+    app.post('/auth/password-reset/confirm', limit, this.#confirmReset.bind(this));
     // Return the active identity so the client can restore the caller's workspace.
-    app.get('/api/auth/me', this.authenticate, (_req, res) => res.json({ user: res.locals.user }));
-    app.post('/api/auth/logout', this.authenticate, this.#logout.bind(this));
+    app.get('/auth/me', this.authenticate, (_req, res) => res.json({ user: res.locals.user }));
+    app.post('/auth/logout', this.authenticate, this.#logout.bind(this));
   }
 
   // Apply the authentication rate limit by client IP, using a shared local key when the header is absent.

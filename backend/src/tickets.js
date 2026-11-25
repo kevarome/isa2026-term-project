@@ -43,12 +43,12 @@ export class TicketController {
   // Mount the endpoints with their access checks and bind handlers to this controller.
   registerRoutes(app, authenticate, requireAdmin) {
     const list = this.listTickets.bind(this);
-    app.get('/api/tickets', authenticate, list);
-    app.get('/api/admin/tickets', authenticate, requireAdmin, list);
-    app.post('/api/tickets', authenticate, this.createTicket.bind(this));
-    app.get('/api/tickets/:id', authenticate, this.getTicket.bind(this));
-    app.patch('/api/tickets/:id', authenticate, this.requireSupport, this.updateTicket.bind(this));
-    app.get('/api/stats', authenticate, this.requireSupport, this.getStats.bind(this));
+    app.get('/tickets', authenticate, list);
+    app.get('/admin/tickets', authenticate, requireAdmin, list);
+    app.post('/tickets', authenticate, this.createTicket.bind(this));
+    app.get('/tickets/:id', authenticate, this.getTicket.bind(this));
+    app.patch('/tickets/:id', authenticate, this.requireSupport, this.updateTicket.bind(this));
+    app.get('/stats', authenticate, this.requireSupport, this.getStats.bind(this));
   }
 
   // Require a staff or administrator role after authentication and return 403 for other callers.
@@ -64,7 +64,7 @@ export class TicketController {
   async listTickets(req, res) {
     const user = res.locals.user;
     const staff = supportRole(user);
-    const legacy = req.path === '/api/admin/tickets';
+    const legacy = req.path === '/admin/tickets';
     const { after = '', department = '', status = '', q = '', sort = staff && !legacy ? 'priority' : 'newest' } = req.query;
     if (typeof after !== 'string' || !['priority', 'newest'].includes(sort) ||
         typeof q !== 'string' || q.length > 200 || typeof department !== 'string' ||

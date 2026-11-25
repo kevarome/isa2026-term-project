@@ -12,10 +12,10 @@ export class AdminController {
 
   // Apply both access checks to every admin route, including the shared usage report.
   registerRoutes(app, authenticate, requireAdmin, usageReport) {
-    app.get('/api/admin/usage', authenticate, requireAdmin, usageReport);
-    app.get('/api/admin/users', authenticate, requireAdmin, this.#listUsers.bind(this));
-    app.delete('/api/admin/users/:id', authenticate, requireAdmin, this.#deleteAsAdmin('users', messages.userMissing));
-    app.delete('/api/admin/tickets/:id', authenticate, requireAdmin, this.#deleteAsAdmin('tickets', messages.ticketMissing));
+    app.get('/admin/usage', authenticate, requireAdmin, usageReport);
+    app.get('/admin/users', authenticate, requireAdmin, this.#listUsers.bind(this));
+    app.delete('/admin/users/:id', authenticate, requireAdmin, this.#deleteAsAdmin('users', messages.userMissing));
+    app.delete('/admin/tickets/:id', authenticate, requireAdmin, this.#deleteAsAdmin('tickets', messages.ticketMissing));
   }
 
   // Return up to 50 registered accounts in email order with the overall account and submission totals.
