@@ -14,7 +14,10 @@
   },
   "dependencies": {
     "express": "^5.1.0",
-    "jose": "6.2.18"
+    "jose": "6.2.18",
+    "swagger-ui-dist": "5.36.0"
   },
-  "devDependencies": { "wrangler": "^4.59.0" }
+  "devDependencies": {
+    "wrangler": "^4.59.0"
+  }
 }

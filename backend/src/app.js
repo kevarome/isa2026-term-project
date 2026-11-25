@@ -4,6 +4,7 @@ import { AuthController } from './auth.js';
 import { AdminController } from './admin.js';
 import { TicketController } from './tickets.js';
 import { ApiUsage } from './usage.js';
+import { registerDocumentation } from './documentation.js';
 
 // Create and return the Express application with the supplied Worker bindings.
 // The optional waitUntil callback lets hosted password-reset email finish after the response.
@@ -55,6 +56,8 @@ export function createApp(env, waitUntil) {
   admin.registerRoutes(api, auth.authenticate, AuthController.requireAdmin, usage.report);
   app.use('/api/v1', api);
   app.use('/api', api);
+
+  registerDocumentation(app);
 
   // Return a JSON 404 for requests that reach the end of the route list.
   app.use((_req, res) => res.status(404).json({ error: messages.endpointMissing }));

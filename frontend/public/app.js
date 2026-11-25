@@ -7,6 +7,8 @@ import { CustomerTicketList } from './customer-ticket-list.js';
 import { UsageReport } from './usage.js';
 
 const $ = id => document.getElementById(id);
+$('api-reference').href = API_ORIGIN + '/doc/';
+$('api-health').href = API_ORIGIN + '/api/v1/health';
 const accessForm = $('access-form');
 const resetRequestForm = $('reset-request-form');
 const resetPasswordForm = $('reset-password-form');

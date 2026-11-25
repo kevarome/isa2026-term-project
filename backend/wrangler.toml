@@ -25,3 +25,9 @@ simple = { limit = 12, period = 60 }
 name = "TICKET_LIMIT"
 namespace_id = "1002"
 simple = { limit = 8, period = 60 }
+
+[build]
+command = "node scripts/prepare-docs.js"
+
+[assets]
+directory = "./.wrangler/doc-assets"
