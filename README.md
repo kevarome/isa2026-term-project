@@ -2,7 +2,7 @@
 
 TicketMaestro is a support portal for NorthLink Internet, a fictional Canadian internet provider. A customer submits a ticket and can follow its status. Cloudflare Clef Flash suggests a department and urgency, and the API routes a validated decision to Billing, Technical, Account, or General Support. Support staff can search queues, review uncertain results, and correct routing. Administrators can view API traffic and ticket statistics, delete tickets, and remove registered users.
 
-For development and testing, the project uses Cloudflare Clef Flash. For the final milestone, classification will use TypeSafe Jev (`typesafe/jev`) instead.
+The configured default model is Cloudflare Clef Flash. The planned final model, TypeSafe Jev, can be selected by setting `AI_MODEL=typesafe/jev` in an environment with access to it.
 
 ## Run locally
 
@@ -10,11 +10,14 @@ Use Node.js 22.14 or newer. From `backend`, install dependencies, migrate the lo
 
 ```powershell
 npm.cmd ci
+node -e "require('node:fs').writeFileSync('.dev.vars', 'JWT_SECRET=' + require('node:crypto').randomBytes(48).toString('hex') + '\n', { flag: 'wx' })"
 npm.cmd run db:local
 node scripts/demo-sql.js --tickets | Set-Content -Encoding ascii .wrangler/demo.sql
 npx.cmd wrangler d1 execute DB --local --file .wrangler/demo.sql
 npm.cmd run dev
 ```
+
+Generate the signing secret once. The command creates the gitignored `backend/.dev.vars` only if the file does not exist. If you already have a local variables file, add a `JWT_SECRET` entry with at least 32 random bytes and keep its value private.
 
 From the repo root in another terminal, start the static client.
 
@@ -62,11 +65,15 @@ flowchart LR
   Routing <-->|Synthetic support message and structured result| Model
 ```
 
-The static client and API use separate origins. The API sends only the support message to the configured model. The validated choices, confidence, and model ID are stored separately from the current assignment and priority. Results below the routing threshold, invalid responses, timeouts, and provider failures go to manual review. Final status and routing changes are staff actions. The browser keeps an eight-hour session token in session storage and D1 stores its digest. The API checks roles and customer ticket ownership on each protected request.
+The static client and API use separate origins. The API sends only the support message to the configured model. The validated choices, confidence, and model ID are stored separately from the current assignment and priority. Results below the routing threshold, invalid responses, timeouts, and provider failures go to manual review. Final status and routing changes are staff actions. Login sets an eight-hour signed JWT in an HttpOnly cookie. The browser includes credentials on API requests. D1 stores a digest so logout and password resets can revoke sessions immediately. The API checks roles and customer ticket ownership on each protected request.
+
+## API consumption
+
+Each account has 20 free functional requests. Ticket, statistics, administrator and current-profile requests count after authentication, including requests rejected by role or input checks. Login, registration, logout, password recovery, health, documentation and preflight are excluded. All workspaces display the server’s running total. Starting with call 21, the client warns that the free allowance has been exceeded and continues serving requests.
 
 ## API reference
 
-The local base URL is `http://localhost:8787/api`. All paths below are relative to it. Send request bodies as JSON with `Content-Type: application/json`. For protected routes, send the token returned by login in the `Authorization: Bearer <token>` header. A successful read or update returns HTTP 200 unless another status is listed.
+The local base URL is `http://localhost:8787/api/v1`. All paths below are relative to it. Send request bodies as JSON with `Content-Type: application/json`. Use the session cookie from login for protected requests. Browser clients must use `credentials: "include"`. Explore the endpoint parameters, examples and errors in [local Swagger UI](http://localhost:8787/doc/). A successful read or update returns HTTP 200 unless another status is listed.
 
 ### Authentication and health
 
@@ -74,9 +81,9 @@ The local base URL is `http://localhost:8787/api`. All paths below are relative 
 | --- | --- | --- |
 | `GET /health` | Public | Returns `{"status":"ok","database":"connected"}` after a database query. |
 | `POST /auth/register` | Public | Send `email` and a `password` of 12–128 characters. Returns 201 with `user`. New accounts have the customer role (`user`). |
-| `POST /auth/login` | Public | Send `email` and `password`. Returns `token` and `user`. |
+| `POST /auth/login` | Public | Send `email` and `password`. Sets the session cookie and returns `user`. |
 | `GET /auth/me` | Signed in | Returns the current `user`, including their role. |
-| `POST /auth/logout` | Signed in | Ends the current session. Returns `{"signedOut":true}`. |
+| `POST /auth/logout` | Signed in | Revokes the session and clears its cookie. Returns `{"signedOut":true}`. |
 | `POST /auth/password-reset/request` | Public | Send `email`. Returns 202 with `accepted` and `delivery` (`local` or `email`) for a valid address, including an unknown one. |
 | `POST /auth/password-reset/confirm` | Public | Send the reset `token` from the link and the new `password`. Returns `{"reset":true}` and ends all sessions for that account. Links expire after 30 minutes. |
 
@@ -85,13 +92,13 @@ The local base URL is `http://localhost:8787/api`. All paths below are relative 
 | Method and path | Access | Request and result |
 | --- | --- | --- |
 | `POST /tickets` | Signed in | Send `{"message":"My internet connection is down."}` (10–2,000 characters after trimming). Returns 201 with `ticket`. |
-| `GET /tickets` | Signed in | Returns `tickets` and `next`. Customers see their own tickets and a submission count in `usage`. Staff and admins see all queues. |
+| `GET /tickets` | Signed in | Returns `tickets` and `next`. Customers see their own tickets, their counted calls in `usage` and their ticket submission count in `submissions`. Staff and admins see all queues. |
 | `GET /tickets/:id` | Ticket owner, staff, admin | Returns `ticket`. |
 | `PATCH /tickets/:id` | Staff, admin | Send at least one of `department`, `priority`, or `status`. Include the `version` from the latest staff read to detect concurrent edits. Returns the updated `ticket`. |
 | `GET /stats` | Staff, admin | Returns `total`, `byCategory` (original AI department), `byDepartment`, `byStatus`, and `byPriority`. |
 | `GET /admin/tickets` | Admin | Lists all tickets, newest first by default. Returns `tickets` and `next`. |
 | `GET /admin/users` | Admin | Returns up to 50 accounts in email order, plus `next` and `totals`. Each account includes its `id`. |
-| `GET /admin/usage?days=7` | Admin | Accepts 7 (default), 30, or 90 days. Returns a summary, daily counts, endpoints, and top users for the period. |
+| `GET /admin/usage?days=7` | Admin | Accepts 7 (default), 30, or 90 days. Returns a summary, daily counts, endpoints, and users for the period, plus lifetime endpoint and per-user totals. |
 | `DELETE /admin/tickets/:id` | Admin | Use the ticket ID and an empty request body. Permanently deletes the ticket. Returns `{"deleted":true}`. Historical submission and request counts are preserved. |
 | `DELETE /admin/users/:id` | Admin | Use the account ID and an empty request body. Permanently removes the account, its tickets, sessions, password reset links, staff profile, and submission records. Previous API requests keep their event counts and lose the account association. Returns `{"deleted":true}`. Removing the signed-in admin's own account returns 409. |
 
@@ -104,12 +111,11 @@ Errors use `{"error":"…"}`. A malformed request returns 400, an invalid or exp
 This PowerShell example signs in as the local demo admin, lists registered users, and closes the session.
 
 ```powershell
-$api = 'http://localhost:8787/api'
+$api = 'http://localhost:8787/api/v1'
 $body = @{ email = 'admin@admin.com'; password = '111' } | ConvertTo-Json
-$session = Invoke-RestMethod -Method Post -Uri "$api/auth/login" -ContentType 'application/json' -Body $body
-$headers = @{ Authorization = "Bearer $($session.token)" }
-(Invoke-RestMethod -Uri "$api/admin/users" -Headers $headers).users | Select-Object id,email,role
-Invoke-RestMethod -Method Post -Uri "$api/auth/logout" -Headers $headers
+Invoke-RestMethod -Method Post -Uri "$api/auth/login" -ContentType 'application/json' -Body $body -SessionVariable session
+(Invoke-RestMethod -Uri "$api/admin/users" -WebSession $session).users | Select-Object id,email,role
+Invoke-RestMethod -Method Post -Uri "$api/auth/logout" -WebSession $session
 ```
 
 ## Testing
@@ -121,7 +127,7 @@ npm.cmd test
 npm.cmd run evaluate:ai -- --repeats 3
 ```
 
-The test suite uses isolated SQLite databases and simulated inference. It covers authentication, password reset, routing, pagination, ticket edits, report totals, and admin deletion. The evaluation groups repeated observations by writing style. For live measurements, set `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` and add `--live` to the evaluation command. Use `--model` to name a supported model or run `npm run evaluate:jev` to select Jev.
+The test suite uses isolated SQLite databases and simulated inference. It covers JWT expiry and revocation, credentialed CORS, route documentation, ticket CRUD, role and ownership checks, and concurrent consumption across the 20-call boundary. A local Chromium check against Wrangler with separate client and API origins also verified the warning on call 21, a restored session with 22 calls after reload, and both administrator tables. The evaluation groups repeated observations by writing style. For live measurements, set `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` and add `--live` to the evaluation command. Use `--model` to name a supported model or run `npm run evaluate:jev` to select Jev.
 
 To test the running API in Postman, import the collection and set its `baseUrl`, `customerEmail`, `customerPassword`, `staffEmail`, and `staffPassword` variables. Run the collection in order to sign in, submit a synthetic ticket, read and update it, check statistics, and sign out. [Postman collection](backend/test/TicketMaestro.postman_collection.json)
 
@@ -129,12 +135,16 @@ To check deletion through the UI, register a disposable customer in the local de
 
 ## Deployment
 
-The hosted demo runs on Cloudflare Workers. [Open TicketMaestro](https://ticketmaestro-client.kevyn-anthoni.workers.dev) · [API health](https://ticketmaestro-api.kevyn-anthoni.workers.dev/api/health)
+The demo uses separate Cloudflare Workers. [Open TicketMaestro](https://ticketmaestro-client.kevyn-anthoni.workers.dev) · [API health](https://ticketmaestro-api.kevyn-anthoni.workers.dev/api/health)
 
 Deploy the API and client as separate Cloudflare Workers. The deploying account needs access to D1, Workers AI, and Workers deployment. Use a Worker CPU limit sufficient for the application's scrypt password hashing.
 
 1. **Prepare D1.** From `backend`, run `npm.cmd ci` and `npx.cmd wrangler login`. For a new database, run `npx.cmd wrangler d1 create ticketmaestro`. In `backend/wrangler.toml`, set the `DB` binding's `database_id` and `database_name` to the remote database. [Cloudflare D1 setup](https://developers.cloudflare.com/d1/get-started/)
-2. **Configure the API.** Set `CLIENT_ORIGIN` to the client’s HTTPS origin (including the scheme, without a trailing slash). Keep the `AI` binding for live classification. To enable hosted password reset, configure a verified sender and a Resend secret. [Password reset configuration](backend/README.md#password-reset)
+2. **Configure the API.** Generate a separate production signing key and store it with `npx.cmd wrangler secret put JWT_SECRET`. Set `CLIENT_ORIGIN` to the client’s HTTPS origin (including the scheme, without a trailing slash). Keep the `AI` binding for live classification. To enable hosted password reset, configure a verified sender and a Resend secret. [Password reset configuration](backend/README.md#password-reset)
 3. **Migrate and deploy the API.** From `backend`, run `npm.cmd run db:remote` and then `npm.cmd run deploy`. Record the API origin printed by Wrangler. For a hosted demonstration, seed the staff and admin accounts with private passwords using the backend guide. [Backend deployment and seeding](backend/README.md#cloudflare-deployment)
 4. **Deploy the client.** In `frontend/public/config.js`, set `API_ORIGIN` to the deployed API origin. In `frontend/public/_headers`, set the `connect-src` directive to allow that same origin. From the repository root, run `./backend/node_modules/.bin/wrangler.cmd deploy --config frontend/wrangler.toml`. If the resulting client origin differs from `CLIENT_ORIGIN`, update the backend configuration and redeploy the API. [Client deployment guide](frontend/README.md#deploy)
-5. **Verify the deployment.** Request `GET /api/health` on the deployed API and check for `"database":"connected"`. Sign in through the hosted client, submit a synthetic ticket, and open it in the staff queue to verify routing and persistence.
+5. **Verify the deployment.** Open `/doc/` and `/api/v1/health` on the deployed API. Sign in from the hosted client, reload to verify the cookie session, and submit a fresh synthetic ticket. Open its staff details and confirm a live model and original classification. Refresh the customer ticket list through call 21 and confirm the allowance warning appears while the ticket list still loads. Check the same account in the administrator’s consumption table.
+
+## Development tools and external resources
+
+OpenAI Codex assisted with the Milestone 2 rubric review, implementation and local verification. Ticket classification uses Cloudflare Workers AI. The API uses Express, Cloudflare Workers and D1, and the interactive reference uses Swagger UI and OpenAPI. [Express](https://expressjs.com/) · [Cloudflare D1](https://developers.cloudflare.com/d1/) · [Workers AI](https://developers.cloudflare.com/workers-ai/) · [Swagger UI](https://swagger.io/tools/swagger-ui/)

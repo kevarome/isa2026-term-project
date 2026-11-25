@@ -8,11 +8,14 @@ Use Node.js 22.14 or newer. From `backend`, run the following in PowerShell.
 
 ```powershell
 npm.cmd ci
+node -e "require('node:fs').writeFileSync('.dev.vars', 'JWT_SECRET=' + require('node:crypto').randomBytes(48).toString('hex') + '\n', { flag: 'wx' })"
 npm.cmd run db:local
 node scripts/demo-sql.js --tickets | Set-Content -Encoding ascii .wrangler/demo.sql
 npx.cmd wrangler d1 execute DB --local --file .wrangler/demo.sql
 npm.cmd run dev
 ```
+
+Generate the local signing key only once. If `.dev.vars` already exists, add a private `JWT_SECRET` of at least 32 random bytes to it.
 
 On macOS or Linux, use `npm` and `npx` in place of `npm.cmd` and `npx.cmd`, and use `node scripts/demo-sql.js --tickets > .wrangler/demo.sql` to write the seed file.
 
@@ -41,16 +44,16 @@ To enable reset emails on a hosted Worker, set `PASSWORD_RESET_FROM` in the Work
 
 ## Administrator API usage
 
-An administrator can request `GET /api/admin/usage?days=7` with their bearer token. The report covers the last 7, 30, or 90 UTC calendar days, including today. It returns request and error totals, average processing time in milliseconds, active account count, daily activity, endpoint traffic and the ten accounts with the most requests. Errors include HTTP 4xx and 5xx responses. Processing time ends before the usage write and excludes client network time.
+An administrator can request `GET /api/v1/admin/usage?days=7` with their session cookie. The report covers the last 7, 30, or 90 UTC calendar days, including today. It returns request and error totals, average processing time in milliseconds, active account count, daily activity, endpoint traffic and per-account traffic for the period. The `endpointTotals` and `userTotals` arrays report lifetime totals for every endpoint and registered user, including zero-use entries. The user totals count functional API calls. Errors include HTTP 4xx and 5xx responses. Processing time ends before the usage write and excludes client network time.
 
 The API records completed requests under their route templates. It groups requests rejected before route matching under `(unrouted)` and skips OPTIONS preflight traffic. A successful report read appears on the next refresh. Protected routes and successful registration and login identify the caller. Anonymous requests contribute to traffic and error totals.
 
-Migration 0005 imports historical ticket submissions from the existing submission ledger. Latency averages use only measured requests. Other endpoints have usage history from when tracking was enabled. The demo seeder leaves request history untouched.
+Migration 0007 initializes lifetime consumption from the functional requests already in D1. Migration 0005 imports historical ticket submissions from the existing submission ledger. Latency averages use only measured requests. Other endpoints have usage history from when tracking was enabled. The demo seeder leaves request history untouched.
 
 ## Cloudflare deployment
 
 1. Authenticate Wrangler to the team’s Cloudflare account with `npx wrangler login`. A CI environment can use provider credentials in its secret store. The account needs permission to manage Workers and D1 and use Workers AI, along with sufficient Worker CPU for scrypt.
 2. Run `npx wrangler d1 create ticketmaestro` in `backend` to create the remote database. Use the returned name and database ID in the `DB` binding in `wrangler.toml`. Set `CLIENT_ORIGIN` to the client Worker’s exact HTTPS origin without a trailing slash. The `AI_MODEL` variable defaults to `@cf/cloudflare/clef-flash`. Set it to `typesafe/jev` if deploying with Jev. [D1 CLI documentation](https://developers.cloudflare.com/workers/wrangler/commands/d1/)
-3. Run `npm run db:remote` before deploying new code. To populate a dedicated synthetic demo database with accounts, create `.wrangler` if needed, generate the seed SQL with private passwords, and run `npx wrangler d1 execute DB --remote --file .wrangler/demo.sql`. Use `--tickets` only if you want the prewritten examples.
+3. Set a private production signing secret with `npx wrangler secret put JWT_SECRET`. Run `npm run db:remote` before deploying new code. To populate a dedicated synthetic demo database with accounts, create `.wrangler` if needed, generate the seed SQL with private passwords, and run `npx wrangler d1 execute DB --remote --file .wrangler/demo.sql`. Use `--tickets` only if you want the prewritten examples.
 4. Run `npm run deploy`, then set the client to the returned API URL as described in the [client setup](../frontend/README.md). The Workers AI binding handles provider access from the API.
-5. Request `/api/health` from the hosted API. Sign in through the deployed client and submit a fresh synthetic outage. As staff, open the ticket to check the model, suggested department, and urgency. If the ticket routed to Technical, find it in that queue, change its status, and reload both workspaces to verify persistence.
+5. Open the interactive API reference at `/doc/`. Request `/api/v1/health` from the hosted API. Sign in through the deployed client and submit a fresh synthetic outage. As staff, open the ticket to check the model, suggested department, and urgency. If the ticket routed to Technical, find it in that queue, change its status, and reload both workspaces to verify persistence.
