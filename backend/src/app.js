@@ -25,8 +25,9 @@ export function createApp(env, waitUntil) {
     const origin = req.get('Origin');
     // Swagger UI runs on the API's own origin. Browser requests from the client
     // use its exact configured origin. Reject cross-site writes lacking an Origin.
-    const apiHost = req.get('Host');
-    const sameOrigin = origin === 'https://' + apiHost || (req.protocol === 'http' && origin === 'http://' + apiHost);
+    // Use the configured public scheme because the Worker may forward HTTPS over HTTP internally.
+    const sameOrigin = origin && env.CLIENT_ORIGIN &&
+      origin === new URL(env.CLIENT_ORIGIN).protocol + '//' + req.get('Host');
     if ((origin && origin !== env.CLIENT_ORIGIN && !sameOrigin) ||
         (!origin && req.get('Sec-Fetch-Site') === 'cross-site' && !['GET', 'HEAD', 'OPTIONS'].includes(req.method))) {
       return res.status(403).json({ error: messages.originDenied });

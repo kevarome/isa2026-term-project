@@ -71,4 +71,7 @@ test('grants credentialed CORS preflights to the configured client origin only',
   const denied = await preflight('https://other.example.test');
   assert.equal(denied.status, 403);
   assert.equal(denied.headers.get('access-control-allow-origin'), null);
+  const apiHost = new URL(url).host;
+  assert.equal((await preflight('https://' + apiHost)).status, 204);
+  assert.equal((await preflight('http://' + apiHost)).status, 403);
 });
