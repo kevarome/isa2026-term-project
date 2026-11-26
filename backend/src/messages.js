@@ -17,6 +17,7 @@ export const messages = {
   endpointMissing: 'Endpoint not found.',
   invalidJson: 'Invalid JSON.',
   requestTooLarge: 'Request is too large.',
+  unsupportedEncoding: 'Unsupported request encoding. Send UTF-8 JSON without compression.',
   serverError: 'Something went wrong. Try again later.',
   staffRequired: 'Support staff access required.',
   invalidFilters: 'Invalid ticket filters.',

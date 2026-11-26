@@ -92,20 +92,32 @@ async function withApp(t, seedLegacy, waitUntil) {
   await new Promise((resolve, reject) => server.once('listening', resolve).once('error', reject));
   t.after(() => new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve())));
   const base = 'http://127.0.0.1:' + server.address().port + '/api/v1';
-  async function request(path, { user, token, method, payload, raw, requestOrigin = origin } = {}) {
+  async function request(path, { user, token, method, payload, raw, requestOrigin = origin, extraHeaders } = {}) {
     const headers = { Origin: requestOrigin };
     const credential = token ?? tokens[user];
     if (credential) headers.Cookie = 'ticketmaestro_session=' + credential;
     if (payload !== undefined || raw !== undefined) headers['Content-Type'] = 'application/json';
     const result = await fetch(base + path, {
       method: method ?? (payload === undefined && raw === undefined ? 'GET' : 'POST'),
-      headers,
+      headers: { ...headers, ...extraHeaders },
       body: raw ?? (payload === undefined ? undefined : JSON.stringify(payload))
     });
     return { status: result.status, headers: result.headers, data: result.status === 204 ? null : await result.json() };
   }
   return { request, env, database, controls, calls: () => calls };
 }
+
+test('returns a JSON 415 for an unsupported JSON charset or content encoding', async t => {
+  const { request } = await withApp(t);
+  for (const extraHeaders of [
+    { 'Content-Type': 'application/json; charset=iso-8859-1' },
+    { 'Content-Encoding': 'unsupported' }
+  ]) {
+    const result = await request('/auth/login', { payload: {}, extraHeaders });
+    assert.equal(result.status, 415);
+    assert.match(result.data.error, /UTF-8 JSON/);
+  }
+});
 
 test('resets passwords with an expiring, single-use link and revokes the account sessions', async t => {
   const { request, env, database } = await withApp(t);

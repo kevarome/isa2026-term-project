@@ -6,6 +6,12 @@ import { TicketController } from './tickets.js';
 import { ApiUsage } from './usage.js';
 import { registerDocumentation } from './documentation.js';
 
+const bodyErrors = new Map([
+  [400, messages.invalidJson],
+  [413, messages.requestTooLarge],
+  [415, messages.unsupportedEncoding]
+]);
+
 // Create and return the Express application with the supplied Worker bindings.
 // The optional waitUntil callback lets hosted password-reset email finish after the response.
 export function createApp(env, waitUntil) {
@@ -63,12 +69,9 @@ export function createApp(env, waitUntil) {
 
   // Return a JSON 404 for requests that reach the end of the route list.
   app.use((_req, res) => res.status(404).json({ error: messages.endpointMissing }));
-  // Convert malformed or oversized JSON errors into client responses.
-  // Log the error name for unexpected failures and return a generic 500 response.
   app.use((error, _req, res, _next) => {
-    if (error.status === 400 || error.status === 413) {
-      return res.status(error.status).json({ error: error.status === 400 ? messages.invalidJson : messages.requestTooLarge });
-    }
+    const message = bodyErrors.get(error.status);
+    if (message) return res.status(error.status).json({ error: message });
     console.error('Request failed', error.name);
     res.status(500).json({ error: messages.serverError });
   });

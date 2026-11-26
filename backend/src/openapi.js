@@ -69,6 +69,7 @@ const errorDescriptions = {
   400: 'Invalid input or malformed JSON.', 401: 'Invalid credentials or missing, expired or revoked session.',
   403: 'Origin or role is not authorized.', 404: 'Resource not found or outside the account’s access.',
   409: 'The operation conflicts with the current account or resource state.', 413: 'The JSON body exceeds 16 KiB.',
+  415: 'The JSON character set or content encoding is unsupported.',
   429: 'Too many requests in a short interval.', 500: 'Internal server error.', 503: 'The service is unavailable.'
 };
 const json = (schema, example) => ({ 'application/json': { schema, example } });
@@ -87,7 +88,7 @@ function operation(tag, summary, success, options = {}) {
   const { statusCode = 200, description, publicRoute = false, counted = !publicRoute,
     headers = {}, parameters, body, errors = [] } = options;
   const responses = { [statusCode]: { ...success, headers: { ...(counted ? apiHeaders : {}), ...headers } } };
-  for (const code of new Set([403, 500, ...(!publicRoute ? [401] : []), ...(body ? [400, 413] : []), ...errors])) {
+  for (const code of new Set([403, 500, ...(!publicRoute ? [401] : []), ...(body ? [400, 413, 415] : []), ...errors])) {
     responses[code] = { $ref: '#/components/responses/Error' + code };
   }
   return {
