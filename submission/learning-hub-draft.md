@@ -15,3 +15,16 @@ The accounts below use the local demo seed. Use the privately configured credent
 | Administrator | admin@admin.com | 111 |
 
 The Milestone 2 API reference is served at `/doc/` on the API Worker.
+
+## Hosted verification
+
+On November 25, 2026 (Pacific time), an automated Microsoft Edge session exercised the public client and API using temporary accounts and fictional tickets. The tested API revision was `cbb2646`. [Hosted client](https://ticketmaestro-client.kevyn-anthoni.workers.dev) · [Hosted API reference](https://ticketmaestro-api.kevyn-anthoni.workers.dev/doc/)
+
+| Requirement | Observed on the hosted deployment |
+| --- | --- |
+| Authentication | Registration returned 201. An incorrect password returned 401. A valid login set a Secure, HttpOnly, SameSite=None cookie. The client restored the workspace after reload. A protected request after logout returned 401. |
+| Authorization | A second customer received 404 when reading the first customer’s ticket and 403 when attempting to edit it or open the administrator usage report. |
+| AI integration | For an office-wide outage, the staff view displayed Cloudflare Clef Flash, Technical, High urgency, and 80.5% confidence. On counted call 26, the API accepted a duplicate-charge ticket and the model suggested Billing with medium urgency. |
+| Persistent CRUD | The customer created and reopened the outage ticket. An administrator marked it resolved. The customer’s independent session read the updated status. After the administrator deleted it, the detail endpoint returned 404 and a refreshed customer list omitted the ticket. |
+| Free allowance | The client showed zero free calls remaining at call 20 and displayed the exhaustion warning at call 21. Login returned the same total after logout. The subsequent ticket-list request brought both the client and administrator’s user table to 22. |
+| Endpoint and user totals | The dashboard listed 17 method-and-path entries. A malformed JSON body, oversized body, and unsupported charset returned 400, 413, and 415. The customer count, ticket POST count, and endpoint error count each increased by exactly three. |
