@@ -49,7 +49,7 @@ export function createApp(env, waitUntil) {
     if (req.method === 'OPTIONS') return res.sendStatus(204);
     next();
   });
-  app.use(express.json({ limit: '16kb' }));
+  const parseJson = express.json({ limit: '16kb' });
 
   // Run a small D1 query before reporting that the API and database are available.
   const api = express.Router();
@@ -58,8 +58,8 @@ export function createApp(env, waitUntil) {
     res.json({ status: 'ok', database: 'connected' });
   });
 
-  auth.registerRoutes(api, usage.consume);
-  const counted = [auth.authenticate, usage.consume];
+  auth.registerRoutes(api, usage.consume, parseJson);
+  const counted = [auth.authenticate, usage.consume, parseJson];
   tickets.registerRoutes(api, counted, AuthController.requireAdmin);
   admin.registerRoutes(api, counted, AuthController.requireAdmin, usage.report);
   app.use('/api/v1', api);

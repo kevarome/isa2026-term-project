@@ -119,6 +119,30 @@ test('returns a JSON 415 for an unsupported JSON charset or content encoding', a
   }
 });
 
+test('counts authenticated ticket requests rejected by the JSON parser in both usage tables', async t => {
+  const { request, calls } = await withApp(t);
+  const anonymous = await request('/tickets', { raw: '{' });
+  assert.equal(anonymous.status, 401);
+  assert.equal(anonymous.headers.get('x-api-calls-used'), null);
+
+  const invalid = [
+    { status: 400, raw: '{' },
+    { status: 413, raw: JSON.stringify({ message: 'x'.repeat(16384) }) },
+    { status: 415, raw: '{}', extraHeaders: { 'Content-Type': 'application/json; charset=iso-8859-1' } }
+  ];
+  for (const [index, { status, ...options }] of invalid.entries()) {
+    const result = await request('/tickets', { ...options, user: 'owner' });
+    assert.equal(result.status, status);
+    assert.equal(result.headers.get('x-api-calls-used'), String(index + 1));
+  }
+  assert.equal(calls(), 0);
+  const { data } = await request('/admin/usage', { user: 'admin' });
+  assert.equal(data.userTotals.find(row => row.email === emails.owner).requests, 3);
+  const tickets = data.endpointTotals.find(row => row.method === 'POST' && row.route === '/api/v1/tickets');
+  assert.equal(tickets.requests, 4);
+  assert.equal(tickets.errors, 4);
+});
+
 test('resets passwords with an expiring, single-use link and revokes the account sessions', async t => {
   const { request, env, database } = await withApp(t);
   env.PASSWORD_RESET_MODE = 'local';
