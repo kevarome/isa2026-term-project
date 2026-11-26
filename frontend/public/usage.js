@@ -7,8 +7,6 @@ const shortDate = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'num
 const fullDate = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
 // Interpret the API?s calendar date at UTC midnight before formatting it.
 const date = value => new Date(value + 'T00:00:00Z');
-// Format a count with the matching singular or plural label.
-const plural = (value, term) => number.format(value) + ' ' + term + (value === 1 ? '' : 's');
 
 // Create a span with plain text and an optional class for its visual role.
 function textSpan(value, className) {
@@ -22,6 +20,7 @@ function textSpan(value, className) {
 // state when the period has no requests.
 function renderChart(days) {
   const peak = Math.max(...days.map(day => day.requests));
+  $('chart-empty').textContent = messages.noPeriodActivity;
   $('chart-empty').hidden = peak > 0;
   $('traffic-graph').hidden = peak === 0;
   const bars = $('chart-bars');
@@ -43,7 +42,7 @@ function renderChart(days) {
     return label;
   }));
 
-  const descriptions = days.map(day => fullDate.format(date(day.date)) + ' · ' + plural(day.requests, 'request') + ' · ' + plural(day.errors, 'error'));
+  const descriptions = days.map(day => messages.dailyTraffic(fullDate.format(date(day.date)), day.requests, day.errors));
   // Give the selected bar the chart?s single tab stop and update the text summary for that day.
   function select(index) {
     const previous = bars.querySelector('[tabindex="0"]');
@@ -102,7 +101,7 @@ function render(report) {
   $('usage-dates').textContent = fullDate.formatRange(date(from), date(to)) + ' · UTC';
   $('metric-requests').textContent = number.format(summary.requests);
   $('metric-error-rate').textContent = summary.requests ? percentage.format(summary.errors / summary.requests) : '—';
-  $('metric-errors').textContent = plural(summary.errors, 'failed request');
+  $('metric-errors').textContent = messages.failedRequests(summary.errors);
   $('metric-duration').textContent = summary.avgDurationMs === null ? '—' : number.format(summary.avgDurationMs) + ' ms';
   $('metric-users').textContent = number.format(summary.activeUsers);
   renderChart(daily);

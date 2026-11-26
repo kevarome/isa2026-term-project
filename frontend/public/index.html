@@ -20,7 +20,7 @@
     <p id="notice" role="status"></p>
     <p id="api-allowance" role="status" hidden>
       API calls used <strong id="api-calls-used"></strong> · Free calls remaining <strong id="api-calls-remaining"></strong>
-      <strong id="api-limit-warning" hidden>Your free allowance is exhausted. You can continue using the service.</strong>
+      <strong id="api-limit-warning" hidden></strong>
     </p>
     <!-- The access card alternates between sign-in, account creation, and the two password recovery steps. -->
     <section id="access" class="access" hidden>
@@ -142,7 +142,7 @@
             <div class="report-heading"><h2 id="traffic-title">Request volume</h2>
               <div class="chart-legend"><span>Successful</span><span>Errors</span></div>
             </div>
-            <p id="chart-empty" class="report-empty" hidden>No API requests were recorded in this period.</p>
+            <p id="chart-empty" class="report-empty" hidden></p>
             <div id="traffic-graph">
               <div class="plot">
                 <div id="chart-scale" aria-hidden="true"></div>
@@ -159,7 +159,7 @@
                 <thead><tr><th scope="col">Endpoint</th><th scope="col">All-time requests</th><th scope="col">Period requests</th><th scope="col">Period errors</th></tr></thead>
                 <tbody id="usage-endpoints"></tbody>
               </table></div>
-              <button type="button" id="expand-endpoints" class="table-action" hidden>Show all endpoints</button>
+              <button type="button" id="expand-endpoints" class="table-action" hidden></button>
             </section>
             <section class="report-card" aria-labelledby="callers-title">
               <div class="report-heading"><h2 id="callers-title">User API consumption</h2></div>
@@ -179,7 +179,7 @@
       <!-- The support queue combines assignment statistics with search, filters, and pagination. -->
       <div id="staff-queue">
       <details class="card staff-section stats">
-        <summary><span>Ticket statistics</span><span id="stats-total" class="muted">Loading…</span></summary>
+        <summary><span>Ticket statistics</span><span id="stats-total" class="muted"></span></summary>
         <div id="stats-breakdown" class="stats-grid"></div>
       </details>
       <section class="card staff-section" aria-labelledby="queue-title">

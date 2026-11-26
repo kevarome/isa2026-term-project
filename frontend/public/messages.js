@@ -25,6 +25,9 @@ export const examples = {
   account: 'I forgot my password and the reset email never arrived. Can you help me regain access?',
   plan: 'Which residential plans are available for a household that streams video on two devices?'
 };
+const number = new Intl.NumberFormat();
+const countedLabel = (value, term) => number.format(value) + ' ' + term + (value === 1 ? '' : 's');
+
 export const messages = {
   networkError: 'Could not reach the API. Try again.',
   requestFailed: 'Request failed. Try again.',
@@ -77,6 +80,11 @@ export const messages = {
   reviewChanges: 'This ticket changed while you were editing. Review its current values and apply your changes again.',
   showFewer: 'Show fewer endpoints',
   noActivity: 'No endpoint activity.',
+  noPeriodActivity: 'No API requests were recorded in this period.',
+  allowanceExhausted: 'Your free allowance is exhausted. You can continue using the service.',
+  dailyTraffic: (date, requests, errors) =>
+    [date, countedLabel(requests, 'request'), countedLabel(errors, 'error')].join(' · '),
+  failedRequests: count => countedLabel(count, 'failed request'),
   noCallers: 'No identified callers in this period.',
   loadingUsage: 'Loading API usage…',
   usageFailed: 'Could not load API usage. ',

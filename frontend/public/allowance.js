@@ -1,3 +1,5 @@
+import { messages } from './messages.js';
+
 // Ignore older totals when requests from the same signed-in session finish out of order.
 let latestTotal = -1;
 
@@ -16,6 +18,8 @@ export function showAllowance(headers) {
   latestTotal = used;
   document.getElementById('api-calls-used').textContent = used;
   document.getElementById('api-calls-remaining').textContent = Math.max(0, limit - used);
-  document.getElementById('api-limit-warning').hidden = headers.get('X-API-Free-Exceeded') !== 'true';
+  const warning = document.getElementById('api-limit-warning');
+  warning.textContent = messages.allowanceExhausted;
+  warning.hidden = headers.get('X-API-Free-Exceeded') !== 'true';
   panel.hidden = false;
 }
